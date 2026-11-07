@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3
+
+- **A bigger window, and the size you leave it at.** The window opened at
+  760×600, barely larger than its own dialogs, so those came up squeezed. It now
+  opens at 1040×840, and the size and maximized state it has when closed are kept
+  in `config/window.json` for the next start.
+
 ## 0.2.2
 
 - The window said "the first start installs its baseline, give it a minute" on
