@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.2.0
+
+A box keeps what you put in it, speaks bash, and can be any image.
+
+- **A box keeps what was installed in it.** Changing a box's exit (or anything
+  else that recreates its container — podman cannot move a container to another
+  network namespace) rebuilt it from the base image, and every `dnf install`
+  since was gone; only the home survived. The container is now committed to a
+  per-box snapshot image when the box stops, and the next start comes from that:
+  packages, repositories you added, tools you built stay. `kiwi-custodia reset
+  NAME` goes back to the base image (the home stays). `set --package` installs
+  what was added since, not the baseline again.
+- **The login shell is bash** when the box has it (every baseline installs it),
+  or the one you name: `new --shell /usr/bin/zsh`, `set --shell`.
+- **More images, or any image.** Presets for the toolbx images of Fedora, Ubuntu,
+  Debian and Arch, Kali rolling and Rocky 9 beside the plain ones; and
+  `--distro custom --image registry/name:tag` for any OCI image — the package
+  manager (dnf, apt, pacman, zypper, apk) is detected on the first start. The app
+  has the image and shell fields too.
+- `check` says when the exit's proxy refused connections recently (the tunnel
+  sidecar sees that; an app only sees an "SSL error").
+- `ALL_PROXY` is set in a box's shells only on a remote-DNS exit (Tor), where a
+  `.onion` needs it; the default route already is the exit, and Chromium and
+  Electron apps that read `all_proxy` choked on the socks5h form ("no internet",
+  empty responses). `$KIWI_CUSTODIA_SOCKS` names the gateway's SOCKS5 for tools
+  you point at it by hand. The baseline includes gawk: launcher scripts use it
+  and the plain Fedora image has no awk.
+
+
 ## 0.1.0
 
 The first version.

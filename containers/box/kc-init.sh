@@ -29,8 +29,18 @@ die() { printf 'kc-init: FATAL: %s\n' "$*" >&2; exit 1; }
 : "${KC_USER:?KC_USER is required}"
 : "${KC_UID:?KC_UID is required}"
 : "${KC_GID:?KC_GID is required}"
-: "${KC_FAMILY:?KC_FAMILY is required}"
+KC_FAMILY="${KC_FAMILY:-auto}"
 KC_HOME="${KC_HOME:-/home/$KC_USER}"
+KC_SHELL="${KC_SHELL:-}"
+# "auto": any image — find its package manager.
+if [ "$KC_FAMILY" = auto ]; then
+    for cand in dnf apt-get pacman zypper apk; do
+        if command -v "$cand" >/dev/null 2>&1; then KC_FAMILY="$cand"; break; fi
+    done
+    [ "$KC_FAMILY" = apt-get ] && KC_FAMILY=apt
+    [ "$KC_FAMILY" = auto ] && die "no package manager found in this image (dnf, apt, pacman, zypper or apk)"
+    log "package manager: $KC_FAMILY"
+fi
 KC_SOCKS="${KC_SOCKS:-127.0.0.1:1080}"
 KC_BOX="${KC_BOX:-box}"
 STAMP=/var/lib/kiwi-custodia/initialized
@@ -39,16 +49,16 @@ export DEBIAN_FRONTEND=noninteractive
 # ----------------------------------------------------------------- packages
 baseline() {
     case "$KC_FAMILY" in
-      dnf)    echo "sudo shadow-utils passwd ca-certificates curl less bash-completion procps-ng
+      dnf)    echo "sudo shadow-utils passwd ca-certificates curl less bash bash-completion procps-ng gawk
                     glibc-langpack-en mesa-dri-drivers mesa-vulkan-drivers libglvnd-egl libglvnd-gles
                     dejavu-sans-fonts xdg-utils" ;;
-      apt)    echo "sudo passwd ca-certificates curl less bash-completion procps locales
+      apt)    echo "sudo passwd ca-certificates curl less bash bash-completion procps locales gawk
                     libgl1 libegl1 libgles2 mesa-vulkan-drivers fonts-dejavu-core xdg-utils" ;;
-      pacman) echo "sudo shadow ca-certificates curl less bash-completion procps-ng
+      pacman) echo "sudo shadow ca-certificates curl less bash bash-completion procps-ng gawk
                     mesa vulkan-icd-loader ttf-dejavu xdg-utils" ;;
-      zypper) echo "sudo shadow ca-certificates curl less bash-completion procps
+      zypper) echo "sudo shadow ca-certificates curl less bash bash-completion procps gawk
                     Mesa-dri libvulkan1 dejavu-fonts xdg-utils" ;;
-      apk)    echo "sudo shadow bash ca-certificates curl less bash-completion procps
+      apk)    echo "sudo shadow bash ca-certificates curl less bash-completion procps gawk
                     mesa-dri-gallium mesa-egl mesa-gles font-dejavu xdg-utils" ;;
       *) die "unknown package family $KC_FAMILY" ;;
     esac
@@ -65,6 +75,7 @@ pkg_install() {
     esac
 }
 
+DONE_PKGS=/var/lib/kiwi-custodia/packages
 if [ ! -e "$STAMP" ]; then
     log "first start: installing the $KC_FAMILY baseline${KC_PACKAGES:+ and: $KC_PACKAGES}"
     # shellcheck disable=SC2046
@@ -75,20 +86,43 @@ if [ ! -e "$STAMP" ]; then
     fi
     mkdir -p "$(dirname "$STAMP")"
     date -u +%Y-%m-%dT%H:%M:%SZ > "$STAMP"
+    printf '%s\n' ${KC_PACKAGES:-} > "$DONE_PKGS"
+else
+    # A box kept across recreates (its snapshot) installs only what was added
+    # to it since — `set --package` — not the baseline again.
+    missing=""
+    for pkg in ${KC_PACKAGES:-}; do
+        grep -qx "$pkg" "$DONE_PKGS" 2>/dev/null || missing="$missing $pkg"
+    done
+    if [ -n "$missing" ]; then
+        log "installing what was added:$missing"
+        # shellcheck disable=SC2086
+        pkg_install $missing && printf '%s\n' $missing >> "$DONE_PKGS" \
+            || log "WARNING: some of$missing did not install"
+    fi
 fi
+
+# A box made before the baseline grew: the few tools launcher scripts assume.
+command -v awk >/dev/null 2>&1 || pkg_install gawk >/dev/null 2>&1 || log "WARNING: could not install gawk"
 
 # ---------------------------------------------------------------- the user
 if ! getent group "$KC_GID" >/dev/null 2>&1; then
     groupadd -g "$KC_GID" "$KC_USER" 2>/dev/null || addgroup -g "$KC_GID" "$KC_USER"
 fi
 group_name="$(getent group "$KC_GID" | cut -d: -f1)"
+shell=""
+if [ -n "$KC_SHELL" ]; then
+    if [ -x "$KC_SHELL" ]; then shell="$KC_SHELL"; else log "WARNING: shell $KC_SHELL is not in this box; using bash"; fi
+fi
+[ -n "$shell" ] || { shell=/bin/bash; [ -x "$shell" ] || shell=/bin/sh; }
 if ! getent passwd "$KC_UID" >/dev/null 2>&1; then
-    shell=/bin/bash
-    [ -x "$shell" ] || shell=/bin/sh
     useradd -M -u "$KC_UID" -g "$KC_GID" -d "$KC_HOME" -s "$shell" "$KC_USER" 2>/dev/null \
         || adduser -D -H -u "$KC_UID" -G "$group_name" -h "$KC_HOME" -s "$shell" "$KC_USER"
 fi
 user_name="$(getent passwd "$KC_UID" | cut -d: -f1)"
+# the shell may have changed (set --shell), or bash arrived with the baseline
+[ "$(getent passwd "$KC_UID" | cut -d: -f7)" = "$shell" ] \
+    || usermod -s "$shell" "$user_name" 2>/dev/null || chsh -s "$shell" "$user_name" 2>/dev/null || true
 
 # The home is the host's directory for this box; empty on the first start.
 mkdir -p "$KC_HOME"
@@ -115,12 +149,23 @@ chown "$KC_UID:$KC_GID" "/run/user/$KC_UID"
 chmod 700 "/run/user/$KC_UID"
 
 # ------------------------------------------------------------- environment
+# The default route already is the exit, so no app needs a proxy setting. The
+# gateway's SOCKS5 is named in KIWI_CUSTODIA_SOCKS for a tool you want to point
+# at it by hand. ALL_PROXY is exported only on a remote-DNS exit (Tor), where a
+# .onion resolves only that way — elsewhere it is left unset: Electron apps and
+# other Chromium-based ones read all_proxy from the environment and choke on the
+# socks5h form (empty responses, "no internet"), and double-proxying buys nothing.
+proxy_lines=""
+if [ "${KC_PROXY_ENV:-0}" = 1 ]; then
+    proxy_lines="export ALL_PROXY=\"socks5h://$KC_SOCKS\" all_proxy=\"socks5h://$KC_SOCKS\"
+export NO_PROXY=\"localhost,127.0.0.0/8\" no_proxy=\"localhost,127.0.0.0/8\""
+fi
 cat > /etc/profile.d/kiwi-custodia.sh <<EOF
 # kiwi-custodia: this box is "$KC_BOX"; its only route is the exit "${KC_EXIT_NAME:-}".
-# The default route already is the exit; these let tools that speak SOCKS do so
-# by name, which is what a .onion needs on a Tor exit.
-export ALL_PROXY="socks5h://$KC_SOCKS" all_proxy="socks5h://$KC_SOCKS"
-export NO_PROXY="localhost,127.0.0.0/8" no_proxy="localhost,127.0.0.0/8"
+# The default route already is the exit; nothing needs a proxy setting. The
+# gateway's SOCKS5, for a tool you want to point at it: \$KIWI_CUSTODIA_SOCKS.
+export KIWI_CUSTODIA_SOCKS="socks5h://$KC_SOCKS"
+$proxy_lines
 export LANG="\${LANG:-C.UTF-8}"
 export KIWI_CUSTODIA_BOX="$KC_BOX"
 EOF

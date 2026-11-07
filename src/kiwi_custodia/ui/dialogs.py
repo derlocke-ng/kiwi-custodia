@@ -158,6 +158,12 @@ class BoxEditor(Adw.Dialog):
         self.distro_note = Adw.ActionRow(use_markup=False, visible=False)
         self.distro_note.set_subtitle_lines(0)
         group.add(self.distro_note)
+        self.image_row = Adw.EntryRow(
+            title="Image (optional; required for Custom image)",
+            text=(box.image if box else ""),
+        )
+        self.image_row.set_sensitive(box is None)  # pinned once the box exists
+        group.add(self.image_row)
         self.hostname_row = Adw.EntryRow(
             title="Hostname (optional)", text=(box.hostname or "") if box else ""
         )
@@ -194,6 +200,11 @@ class BoxEditor(Adw.Dialog):
             text=" ".join(box.packages) if box else "",
         )
         group.add(self.packages_row)
+        self.shell_row = Adw.EntryRow(
+            title="Shell (optional; bash when the box has it)",
+            text=(box.shell or "") if box else "",
+        )
+        group.add(self.shell_row)
         page.add(group)
 
         self.error = Adw.Banner(revealed=False)
@@ -207,7 +218,7 @@ class BoxEditor(Adw.Dialog):
     def _distro_note(self) -> None:
         key = list(distros.DISTROS)[self.distro_row.get_selected()]
         d = distros.DISTROS[key]
-        self.distro_note.set_title(d.image)
+        self.distro_note.set_title(d.image or "type the image below (registry/name:tag)")
         self.distro_note.set_subtitle(d.notes or "")
         self.distro_note.set_visible(True)
 
@@ -229,6 +240,8 @@ class BoxEditor(Adw.Dialog):
         gpu = self.gpu_row.get_active()
         entry = self.entry_row.get_active()
         key = list(distros.DISTROS)[self.distro_row.get_selected()]
+        image = self.image_row.get_text().strip() or None
+        shell = self.shell_row.get_text().strip() or None
 
         def work():
             from .. import desktop
@@ -236,7 +249,14 @@ class BoxEditor(Adw.Dialog):
 
             if self._box is None:
                 box = store.create(
-                    name, distro=key, exit_id=exit_id, hostname=hostname, packages=packages, gpu=gpu
+                    name,
+                    distro=key,
+                    exit_id=exit_id,
+                    hostname=hostname,
+                    packages=packages,
+                    gpu=gpu,
+                    image=image,
+                    shell=shell,
                 )
             else:
                 box = self._box
@@ -248,6 +268,7 @@ class BoxEditor(Adw.Dialog):
                 box.hostname = hostname
                 box.packages = packages
                 box.gpu = gpu
+                box.shell = shell
             box.desktop_entry = entry
             store.save(box)
             desktop.sync_entry(box, describe(box))

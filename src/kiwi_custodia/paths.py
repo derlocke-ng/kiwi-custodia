@@ -92,6 +92,13 @@ def gateway_name(exit_id: str) -> str:
     return proxy_paths.gateway_name(exit_id)
 
 
+def box_image(box_id: str) -> str:
+    """The box's snapshot image: the container committed when it was last
+    stopped, so what was installed in it survives a recreate (another exit, a
+    changed hostname, an update of the base image)."""
+    return f"localhost/{APP}/box-{box_id[:8]}:latest"
+
+
 def box_name(box_id: str) -> str:
     return f"{PREFIX}-box-{box_id[:12]}"
 

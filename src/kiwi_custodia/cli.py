@@ -68,7 +68,7 @@ def cmd_distros(a: argparse.Namespace) -> int:
     for d in distros.DISTROS.values():
         star = " (default)" if d.key == distros.DEFAULT else ""
         note = f"  — {d.notes}" if d.notes else ""
-        _p(f"{d.key:10} {d.title:22} {d.image}{star}{note}")
+        _p(f"{d.key:15} {d.title:22} {d.image or '(--image)'}{star}{note}")
     return 0
 
 
@@ -86,6 +86,7 @@ def cmd_new(a: argparse.Namespace) -> int:
             packages=a.package or [],
             gpu=not a.no_gpu,
             image=a.image,
+            shell=a.shell,
         )
     except store.StoreError as exc:
         return _fail(str(exc))
@@ -237,14 +238,20 @@ def cmd_set(a: argparse.Namespace) -> int:
             return _fail(str(exc))
         if ex.id != box.exit:
             if was_running:
-                boxes.stop(box)
+                boxes.stop(box)  # committed to its snapshot first: nothing installed is lost
                 was_running = False
-                changed.append("stopped (a box cannot change its exit while up)")
+                changed.append(
+                    "stopped — a box cannot change its exit while up; it starts again on the "
+                    "new one with everything that was installed in it"
+                )
             box.exit = ex.id
             changed.append(f"exit {ex.name}")
     if a.hostname is not None:
         box.hostname = a.hostname or None
         changed.append(f"hostname {box.host}")
+    if a.shell is not None:
+        box.shell = a.shell or None
+        changed.append(f"shell {box.shell or 'default (bash)'}")
     if a.gpu is not None:
         box.gpu = a.gpu
         changed.append(f"gpu {'on' if a.gpu else 'off'}")
@@ -261,7 +268,9 @@ def cmd_set(a: argparse.Namespace) -> int:
         _p("nothing to change")
         return 0
     _p(f"{box.name}: " + ", ".join(changed))
-    if (a.hostname is not None or a.gpu is not None or a.package) and was_running:
+    if (
+        a.hostname is not None or a.gpu is not None or a.package or a.shell is not None
+    ) and was_running:
         _p("applies at the next start: kiwi-custodia stop && kiwi-custodia up")
     if a.package and boxes.running(box):
         _p(
@@ -285,6 +294,23 @@ def cmd_rm(a: argparse.Namespace) -> int:
             return 0
     boxes.delete(box)
     _p(f"deleted {box.name}")
+    return 0
+
+
+def cmd_reset(a: argparse.Namespace) -> int:
+    """Back to the base image: the container and the snapshot go, the home stays."""
+    try:
+        box = _box(a.box)
+    except store.StoreError as exc:
+        return _fail(str(exc))
+    if not a.yes:
+        _p(f"this throws away everything installed in {box.name} (its home stays)")
+        answer = input("reset? [y/N] ").strip().lower()
+        if answer not in ("y", "yes"):
+            _p("kept")
+            return 0
+    boxes.reset(box)
+    _p(f"{box.name} reset: the next start installs the baseline again")
     return 0
 
 
@@ -449,8 +475,14 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("new", help="create a box")
     p.add_argument("name")
     p.add_argument("--exit", required=True, help="the kiwi-proxy exit it leaves through")
-    p.add_argument("--distro", default=distros.DEFAULT, choices=list(distros.DISTROS))
-    p.add_argument("--image", help="a different image for that distro family")
+    p.add_argument(
+        "--distro",
+        default=distros.DEFAULT,
+        choices=list(distros.DISTROS),
+        help="a preset (kiwi-custodia distros lists them), or custom with --image",
+    )
+    p.add_argument("--image", help="an image instead of the preset's; required for --distro custom")
+    p.add_argument("--shell", help="the login shell in the box (default: bash when it has it)")
     p.add_argument("--hostname")
     p.add_argument("--package", action="append", help="installed by the first start (repeatable)")
     p.add_argument("--no-gpu", action="store_true", help="do not pass /dev/dri in")
@@ -491,6 +523,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--name")
     p.add_argument("--exit", help="another kiwi-proxy exit")
     p.add_argument("--hostname", help="'' for the box's name")
+    p.add_argument("--shell", help="the login shell in the box; '' for the default (bash)")
     p.add_argument("--package", action="append")
     g = p.add_mutually_exclusive_group()
     g.add_argument("--gpu", dest="gpu", action="store_true", default=None)
@@ -504,6 +537,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("box")
     p.add_argument("--yes", "-y", action="store_true")
     p.set_defaults(fn=cmd_rm)
+
+    p = sub.add_parser(
+        "reset", help="back to the base image: what was installed goes, the home stays"
+    )
+    p.add_argument("box")
+    p.add_argument("--yes", "-y", action="store_true")
+    p.set_defaults(fn=cmd_reset)
 
     p = sub.add_parser("check", help="what the world sees from inside the box")
     p.add_argument("box")

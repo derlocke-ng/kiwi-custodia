@@ -93,6 +93,7 @@ def test_export_writes_entry_and_icon(a_box, fake_podman, monkeypatch):
         return results["icons"] if "find" in args[-1] else results["dump"]
 
     monkeypatch.setattr(apps.podman, "exec_", exec_)
+    monkeypatch.setattr(apps.shutil, "which", lambda name: None)  # not the machine's install
     path = apps.export(a_box, "firefox")
     assert path == paths.applications_dir() / f"{APP_ID}.box-work-firefox.desktop"
     text = path.read_text()

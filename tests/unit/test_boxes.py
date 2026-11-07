@@ -215,3 +215,60 @@ def test_delete_stops_and_removes(a_box, an_exit, fake_podman):
     assert store.list_boxes() == []
     assert paths.box_name(a_box.id) not in fake_podman.containers
     assert paths.gateway_name(an_exit.id) not in fake_podman.containers
+
+
+# ------------------------------------------------------------- snapshots
+def test_stop_keeps_the_box_as_a_snapshot_and_up_starts_from_it(a_box, an_exit, fake_podman):
+    boxes.up(a_box)
+    name = paths.box_name(a_box.id)
+    assert fake_podman.runs[-1][-2] == a_box.image  # the base image, first time
+    boxes.stop(a_box)
+    assert fake_podman.commits and fake_podman.commits[-1][-1] == paths.box_image(a_box.id)
+    assert fake_podman.commits[-1][-2] == name
+    assert boxes.has_snapshot(a_box)
+    up = boxes.up(a_box)
+    assert fake_podman.runs[-1][-2] == paths.box_image(a_box.id)  # the snapshot, from then on
+    assert any("snapshot" in n for n in up.notes)
+
+
+def test_delete_and_reset_forget_the_snapshot(a_box, an_exit, fake_podman):
+    boxes.up(a_box)
+    boxes.stop(a_box)
+    assert boxes.has_snapshot(a_box)
+    boxes.reset(a_box)
+    assert not boxes.has_snapshot(a_box)
+    assert paths.box_home(a_box.id).exists()  # the home stays
+    boxes.up(a_box)
+    boxes.delete(a_box)
+    assert not boxes.has_snapshot(a_box)
+    assert (
+        not fake_podman.commits[-1:] or fake_podman.commits[-1][-2] != "deleted"
+    )  # no commit on delete
+
+
+def test_run_args_carry_the_shell_and_an_auto_family_for_a_custom_image(an_exit, a_session):
+    box = store.create(
+        "lab", distro="custom", exit_id=an_exit.id, image="quay.io/x/y:1", shell="/usr/bin/zsh"
+    )
+    args = boxes.run_args(box, an_exit, "kf-gw-x", "/rt/resolv.conf", a_session)
+    env = dict(e.split("=", 1) for e in _flag(args, "--env"))
+    assert env["KC_FAMILY"] == "auto" and env["KC_SHELL"] == "/usr/bin/zsh"
+    assert args[-2] == "quay.io/x/y:1"
+    assert (
+        boxes.run_args(box, an_exit, "kf-gw-x", "/rt/r", a_session, image="snap:1")[-2] == "snap:1"
+    )
+
+
+def test_a_custom_distro_needs_an_image(an_exit):
+    with pytest.raises(store.StoreError, match="needs an image"):
+        store.create("lab", distro="custom", exit_id=an_exit.id)
+
+
+def test_proxy_env_only_on_a_remote_dns_exit(a_box, an_exit, a_session):
+    args = boxes.run_args(a_box, an_exit, "kf-gw-x", "/rt/resolv.conf", a_session)
+    env = dict(e.split("=", 1) for e in _flag(args, "--env"))
+    assert env["KC_PROXY_ENV"] == "0"  # a resolver exit: the route is the exit, no ALL_PROXY
+    tor = make_exit("tor", dns_mode="remote")
+    args = boxes.run_args(a_box, tor, "kf-gw-x", "/rt/resolv.conf", a_session)
+    env = dict(e.split("=", 1) for e in _flag(args, "--env"))
+    assert env["KC_PROXY_ENV"] == "1"  # Tor: a .onion needs socks5h by name

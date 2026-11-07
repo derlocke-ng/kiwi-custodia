@@ -30,6 +30,7 @@ class Box(Strict):
     hostname: str | None = None  # the box's hostname; its name when None
     packages: list[str] = Field(default_factory=list)  # extra packages the init installs
     gpu: bool = True  # pass /dev/dri in, for hardware rendering
+    shell: str | None = None  # the user's login shell in the box; bash when None and present
     desktop_entry: bool = False  # a terminal entry for the box in the app grid
     exported: list[str] = Field(default_factory=list)  # desktop file ids exported to the host
     notes: str = ""

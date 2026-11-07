@@ -45,6 +45,7 @@ def create(
     packages: list[str] | None = None,
     gpu: bool = True,
     image: str | None = None,
+    shell: str | None = None,
 ) -> Box:
     if not valid_name(name):
         raise StoreError(
@@ -59,6 +60,8 @@ def create(
         raise StoreError(str(exc)) from exc
     if not exits.exists(exit_id):
         raise StoreError(f"no kiwi-proxy exit with id {exit_id!r}")
+    if not (image or d.image):
+        raise StoreError(f"distro {d.key!r} needs an image: --image registry/name:tag")
     box = Box(
         id=str(uuid.uuid4()),
         name=name,
@@ -69,6 +72,7 @@ def create(
         hostname=hostname,
         packages=list(packages or []),
         gpu=gpu,
+        shell=shell or None,
     )
     paths.box_home(box.id).mkdir(parents=True, exist_ok=True)
     save(box)

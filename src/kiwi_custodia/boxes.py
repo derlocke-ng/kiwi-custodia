@@ -83,6 +83,7 @@ def run_args(
     sess: session.Session,
     *,
     detach: bool = True,
+    image: str | None = None,
 ) -> list[str]:
     """The `podman run` for a box. Rendered apart from running it so it can be
     tested without podman.
@@ -126,9 +127,14 @@ def run_args(
         "KC_UID": str(sess.uid),
         "KC_GID": str(sess.gid),
         "KC_HOME": home,
-        "KC_FAMILY": d.family,
+        "KC_FAMILY": d.family,  # "auto": kc-init detects the package manager
+        "KC_SHELL": box.shell or "",
         "KC_PACKAGES": " ".join(box.packages),
         "KC_SOCKS": gateway.FORWARDER,
+        # ALL_PROXY in the box's shells only on a remote-DNS exit (Tor), where a
+        # .onion needs it; otherwise the default route is the exit and the
+        # variable only confuses Chromium/Electron apps.
+        "KC_PROXY_ENV": "1" if ex.dns.mode == "remote" else "0",
         "KC_BOX": box.name,
         "KC_EXIT_NAME": ex.name,
         **sess.env,
@@ -154,8 +160,36 @@ def run_args(
     }
     for key, val in sorted(labels.items()):
         args += ["--label", f"{key}={val}"]
-    args += [box.image, INIT_SCRIPT]
+    args += [image or box.image, INIT_SCRIPT]
     return args
+
+
+# -------------------------------------------------------------- snapshots
+def has_snapshot(box: Box) -> bool:
+    return podman.image_exists(paths.box_image(box.id))
+
+
+def snapshot(box: Box) -> bool:
+    """Commit the box's container to its snapshot image, so what was installed
+    in it (packages, a repo you added, a tool built from source) survives the
+    container being recreated — for another exit, a hostname, a new base image.
+    The home is a host directory and never needed this. False when there is no
+    container to commit."""
+    name = paths.box_name(box.id)
+    if not podman.exists(name):
+        return False
+    proc = podman._run(
+        ["commit", "-q", "--pause=false", name, paths.box_image(box.id)],
+        check=False,
+        timeout=600,
+    )
+    if proc.returncode != 0:
+        raise BoxError(f"could not keep the box's contents: {proc.stderr.strip()}")
+    return True
+
+
+def forget_snapshot(box: Box) -> None:
+    podman._run(["rmi", "-f", paths.box_image(box.id)], check=False)
 
 
 def exec_args(
@@ -236,7 +270,11 @@ def up(box: Box, *, timeout: float = 900.0) -> BoxUp:
     if podman.is_running(name):
         return BoxUp(box, gw.name, tun.name, name, reused=True, notes=notes)
 
-    if not podman.image_exists(box.image):
+    image = box.image
+    if has_snapshot(box):
+        image = paths.box_image(box.id)  # the box as it was when last stopped
+        notes.append("from its snapshot: what was installed is still there")
+    elif not podman.image_exists(box.image):
         notes.append(f"pulling {box.image}")
         try:
             podman.pull(box.image)
@@ -247,7 +285,7 @@ def up(box: Box, *, timeout: float = 900.0) -> BoxUp:
     sess = session.current(gpu=box.gpu)
     notes += sess.notes
     resolv = tunnel.write_resolv_conf(ex)
-    args = run_args(box, ex, gw.name, str(resolv), sess)
+    args = run_args(box, ex, gw.name, str(resolv), sess, image=image)
     podman.rm(name)
     try:
         podman._run(args, timeout=180)
@@ -282,13 +320,17 @@ def _let_go(box: Box, exit_id: str, name: str) -> None:
             gateway.release(exit_id, ignore=(name, paths.tunnel_name(exit_id)))
 
 
-def stop(box: Box) -> None:
-    """The box's container goes. The exit's sidecar goes with it unless another
-    box on the exit is running; the gateway goes unless something else — a
-    kiwi-fox browser, a pentest tool, `kiwi-proxy up` — still uses it."""
+def stop(box: Box, *, keep: bool = True) -> None:
+    """The box's container goes — committed to its snapshot first (`keep`), so
+    the next start has everything that was installed in it. The exit's sidecar
+    goes with it unless another box on the exit is running; the gateway goes
+    unless something else — a kiwi-fox browser, a pentest tool, `kiwi-proxy up`
+    — still uses it."""
     if not podman.available():
         return
     name = paths.box_name(box.id)
+    if keep:
+        snapshot(box)
     podman.rm(name)
     if _others_running(box.exit, except_box=box.id):
         return
@@ -339,17 +381,47 @@ def check(box: Box) -> ExitInfo:
             return endpoint.parse_geo(proc.stdout)
         except endpoint.EndpointError as exc:
             failures.append(f"{url}: {exc}")
+    refused = _recent_refusals(box.exit)
+    if refused:
+        failures.append(
+            "the exit's proxy refused connections recently (a refused connection looks "
+            f"like an SSL error to the app): {refused}"
+        )
     raise BoxError("; ".join(failures) or "exit probe failed")
+
+
+def _recent_refusals(exit_id: str) -> str:
+    """What tun2socks logged about CONNECTs the exit's proxy refused: the one
+    thing a box cannot see from inside, and the usual reason for 'SSL errors'
+    on an otherwise working exit."""
+    try:
+        lines = podman.logs(paths.tunnel_name(exit_id), tail=200).splitlines()
+    except Exception:  # noqa: BLE001
+        return ""
+    hits = [ln for ln in lines if "SOCKS server failure" in ln or "CONNECT:" in ln]
+    hosts = []
+    for ln in hits[-5:]:
+        if "dial " in ln:
+            hosts.append(ln.split("dial ", 1)[1].split(":", 1)[0])
+    return ", ".join(dict.fromkeys(hosts)) if hosts else ""
 
 
 def delete(box: Box) -> None:
     """Stop it, take its desktop entries away, remove the record and the home."""
     from . import apps, desktop
 
-    stop(box)
+    stop(box, keep=False)
+    forget_snapshot(box)
     apps.unexport_all(box)
     desktop.remove_entry(box.id)
     store.delete(box.id)
+
+
+def reset(box: Box) -> None:
+    """Back to the base image: the container and its snapshot go, the home
+    stays; the next start installs the baseline again."""
+    stop(box, keep=False)
+    forget_snapshot(box)
 
 
 def reap() -> list[str]:

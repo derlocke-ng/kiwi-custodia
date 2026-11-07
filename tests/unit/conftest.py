@@ -71,6 +71,7 @@ class FakePodman:
         self.pulled: list[str] = []
         self.runs: list[list[str]] = []  # every `podman run` argv
         self.execs: list[list[str]] = []
+        self.commits: list[list[str]] = []
         self.exec_result = subprocess.CompletedProcess([], 0, stdout="", stderr="")
         m = monkeypatch
         m.setattr(podman, "available", lambda: True)
@@ -199,6 +200,13 @@ class FakePodman:
             return self.exec_result
         if args[0] == "cp":
             Path(args[2]).write_bytes(b"icon")
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        if args[0] == "commit":  # the box's snapshot
+            self.commits.append(args)
+            self.images.add(args[-1])
+            return subprocess.CompletedProcess(args, 0, stdout="sha256:fake", stderr="")
+        if args[0] == "rmi":
+            self.images.discard(args[-1])
             return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 

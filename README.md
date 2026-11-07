@@ -49,11 +49,17 @@ kiwi-custodia stop work
 kiwi-custodia-gui                                         # "Kiwi Custodia" in your app grid
 ```
 
-`new` takes `--distro fedora|ubuntu|debian|arch|opensuse|alpine` (`kiwi-custodia
-distros`), `--package NAME` for things the first start should install, `--no-gpu`,
+`new` takes `--distro` (a preset: Fedora, Ubuntu, Debian, Arch, openSUSE, Rocky,
+Alpine, Kali, the toolbx images of the first four — `kiwi-custodia distros` lists
+them — or `custom` with `--image registry/name:tag` for any OCI image; the package
+manager is detected on the first start), `--shell` for a login shell other than
+bash, `--package NAME` for things the first start should install, `--no-gpu`,
 `--desktop-entry` for a terminal entry in the app grid, `--no-start`, `--enter`.
-`set` changes a box afterwards, `--exit OTHER` included (the box is stopped for
-it). `rm` deletes the box and its home.
+`set` changes a box afterwards, `--exit OTHER` included: the box is stopped for
+it and starts again on the new exit with everything that was installed in it —
+a box is committed to a snapshot image when it stops, and the next start comes
+from that. `reset` goes back to the base image (the home stays); `rm` deletes the
+box and its home.
 
 ### The app
 
@@ -67,16 +73,20 @@ logs, setup.
 - Your user, same uid, passwordless `sudo`. The box's home is
   `~/.local/share/kiwi-custodia/boxes/<id>/home` on the host — one per box, not
   your real home: two boxes are two identities, and deleting a box deletes it.
-- The first start installs a baseline: `sudo`, a locale, Mesa for GPU
+- The first start installs a baseline: `sudo`, bash, a locale, Mesa for GPU
   rendering, a font, `xdg-utils`, `curl`. Whatever you add with the package
-  manager stays; the container is recreated from the image only when it is gone.
+  manager stays: the container is committed to the box's snapshot image when the
+  box stops, and recreated from that — after an exit change, a new base image,
+  a reboot. `kiwi-custodia reset` is the way back to the plain base image.
 - Wayland, X11 for Xwayland clients, PipeWire and its PulseAudio shim, the
   session bus and `/dev/dri` are passed in, so a GTK, Qt or Electron app opens
   on your desktop with your theme and talks to the portals.
 - The hostname is the box's name, so prompts read `you@work`.
-- `ALL_PROXY=socks5h://127.0.0.1:1080` is set in every shell. Not needed —
-  the default route already is the exit — but a tool that speaks SOCKS by name
-  can resolve a `.onion` that way on a Tor exit.
+- No proxy setting is needed: the default route already is the exit. The
+  gateway's SOCKS5 is in `$KIWI_CUSTODIA_SOCKS` for a tool you want to point at
+  it by hand; on a remote-DNS exit (Tor) `ALL_PROXY` is set as well, since a
+  `.onion` resolves only that way. Elsewhere it is left unset: Chromium and
+  Electron apps read `all_proxy` and choke on it.
 
 ### What goes where
 

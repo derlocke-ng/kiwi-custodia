@@ -123,3 +123,35 @@ def test_commands_without_podman(args, capsys, monkeypatch):
     monkeypatch.setattr(podman, "available", lambda: False)
     code, _ = run(capsys, *args)
     assert code == 0
+
+
+def test_new_with_shell_set_shell_and_reset(an_exit, fake_podman, capsys):
+    from kiwi_custodia import cli
+
+    assert (
+        cli.main(
+            [
+                "new",
+                "lab",
+                "--exit",
+                "work",
+                "--distro",
+                "kali",
+                "--shell",
+                "/bin/zsh",
+                "--no-start",
+            ]
+        )
+        == 0
+    )
+    box = store.find_by_name("lab")
+    assert box.shell == "/bin/zsh" and box.image.startswith("docker.io/kalilinux/")
+    assert cli.main(["set", "lab", "--shell", ""]) == 0
+    assert store.find_by_name("lab").shell is None
+    assert cli.main(["up", "lab"]) == 0
+    assert cli.main(["reset", "lab", "--yes"]) == 0
+    out = capsys.readouterr().out
+    assert "reset: the next start installs the baseline again" in out
+    assert cli.main(["distros"]) == 0
+    out = capsys.readouterr().out
+    assert "kali" in out and "custom" in out and "(--image)" in out
