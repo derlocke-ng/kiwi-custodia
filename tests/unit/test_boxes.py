@@ -49,6 +49,8 @@ def test_run_args_mount_home_resolver_init_and_the_session(a_box, an_exit, a_ses
     assert labels["app"] == "kiwi-custodia"
     assert labels[paths.ROLE_LABEL] == "box"
     assert labels[paths.EXIT_LABEL] == an_exit.id
+    # kiwi-proxy commits the box to this image before it removes it with the gateway
+    assert labels[paths.SNAPSHOT_LABEL] == paths.box_image(a_box.id)
     assert "--device" not in args  # gpu=False session
 
 
@@ -272,3 +274,32 @@ def test_proxy_env_only_on_a_remote_dns_exit(a_box, an_exit, a_session):
     args = boxes.run_args(a_box, tor, "kf-gw-x", "/rt/resolv.conf", a_session)
     env = dict(e.split("=", 1) for e in _flag(args, "--env"))
     assert env["KC_PROXY_ENV"] == "1"  # Tor: a .onion needs socks5h by name
+
+
+def test_a_commit_that_leaves_no_image_keeps_the_container(
+    a_box, an_exit, fake_podman, monkeypatch
+):
+    boxes.up(a_box)
+    name = paths.box_name(a_box.id)
+    real_run = fake_podman._run
+
+    def run(args, **k):  # podman says fine but writes nothing
+        if args[0] == "commit":
+            import subprocess
+
+            return subprocess.CompletedProcess(args, 0, stdout="sha256:x", stderr="")
+        return real_run(args, **k)
+
+    monkeypatch.setattr(boxes.podman, "_run", run)
+    with pytest.raises(boxes.BoxError, match="is not there"):
+        boxes.stop(a_box)
+    assert name in fake_podman.containers  # nothing was lost
+
+
+def test_up_keeps_a_box_a_reboot_left_behind(a_box, an_exit, fake_podman):
+    boxes.up(a_box)
+    name = paths.box_name(a_box.id)
+    fake_podman.containers[name]["running"] = False  # the host rebooted
+    boxes.up(a_box)
+    assert fake_podman.commits, "the exited container was committed before --replace"
+    assert fake_podman.containers[name]["image"] == paths.box_image(a_box.id)

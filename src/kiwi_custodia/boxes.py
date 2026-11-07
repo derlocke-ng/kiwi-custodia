@@ -157,6 +157,7 @@ def run_args(
         paths.BOX_LABEL: box.id,
         paths.EXIT_LABEL: ex.id,
         paths.DISTRO_LABEL: box.distro,
+        paths.SNAPSHOT_LABEL: paths.box_image(box.id),  # kiwi-proxy keeps it before removing it
     }
     for key, val in sorted(labels.items()):
         args += ["--label", f"{key}={val}"]
@@ -178,13 +179,12 @@ def snapshot(box: Box) -> bool:
     name = paths.box_name(box.id)
     if not podman.exists(name):
         return False
-    proc = podman._run(
-        ["commit", "-q", "--pause=false", name, paths.box_image(box.id)],
-        check=False,
-        timeout=600,
-    )
+    image = paths.box_image(box.id)
+    proc = podman._run(["commit", "-q", "--pause=false", name, image], check=False, timeout=600)
     if proc.returncode != 0:
         raise BoxError(f"could not keep the box's contents: {proc.stderr.strip()}")
+    if not podman.image_exists(image):
+        raise BoxError(f"podman commit returned but {image} is not there; the box is left running")
     return True
 
 
@@ -269,11 +269,17 @@ def up(box: Box, *, timeout: float = 900.0) -> BoxUp:
         raise _network_error(exc) from exc
     if podman.is_running(name):
         return BoxUp(box, gw.name, tun.name, name, reused=True, notes=notes)
+    if podman.exists(name):
+        # Left behind by a crash or a reboot: what is in it is kept before
+        # --replace starts a new one.
+        snapshot(box)
 
     image = box.image
     if has_snapshot(box):
         image = paths.box_image(box.id)  # the box as it was when last stopped
         notes.append("from its snapshot: what was installed is still there")
+    elif podman.image_exists(box.image):
+        notes.append(f"from the base image {box.image}: a fresh box, the baseline gets installed")
     elif not podman.image_exists(box.image):
         notes.append(f"pulling {box.image}")
         try:
@@ -329,8 +335,8 @@ def stop(box: Box, *, keep: bool = True) -> None:
     if not podman.available():
         return
     name = paths.box_name(box.id)
-    if keep:
-        snapshot(box)
+    if keep and podman.exists(name):
+        snapshot(box)  # raises, and the container stays, rather than lose its contents
     podman.rm(name)
     if _others_running(box.exit, except_box=box.id):
         return

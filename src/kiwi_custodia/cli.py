@@ -105,7 +105,10 @@ def _up_and_report(box: Box, *, enter: bool = False) -> int:
     missing = setup.ready()
     if missing:
         return _fail("not set up yet: " + "; ".join(missing))
-    _p(f"bringing {box.name} up — the first start installs the baseline, give it a minute")
+    if boxes.has_snapshot(box):
+        _p(f"bringing {box.name} up from its snapshot")
+    else:
+        _p(f"bringing {box.name} up — the first start installs the baseline, give it a minute")
     try:
         up = boxes.up(box)
     except boxes.BoxError as exc:
@@ -168,8 +171,12 @@ def cmd_stop(a: argparse.Namespace) -> int:
         box = _box(a.box)
     except store.StoreError as exc:
         return _fail(str(exc))
-    boxes.stop(box)
-    _p(f"stopped {box.name}")
+    try:
+        boxes.stop(box)
+    except boxes.BoxError as exc:
+        return _fail(str(exc))
+    kept = " — kept as a snapshot, the next start has everything" if boxes.has_snapshot(box) else ""
+    _p(f"stopped {box.name}{kept}")
     return 0
 
 

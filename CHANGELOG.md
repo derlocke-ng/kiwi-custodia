@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.1
+
+- **Taking the exit down in Kiwi Proxy no longer empties the box.** A box is a
+  container joined to kiwi-proxy's gateway, and taking the exit down — the stop
+  button in Kiwi Proxy, `kiwi-proxy down`, a replace, a reap — removes every
+  container inside that gateway. The 0.2.0 snapshot was taken by kiwi-custodia's
+  own `stop` alone, so the box went with the exit, with everything installed in
+  it. A box now carries the `kiwi-proxy.snapshot` label and kiwi-proxy 0.7.1
+  commits it to its snapshot image before removing it; the next `up` starts from
+  that. A box a reboot or a crash left behind is committed before it is replaced,
+  too.
+  A box that was already running when this version was installed carries no
+  label yet: stop and start it once (`kiwi-custodia stop NAME && kiwi-custodia
+  up NAME`, a few seconds from its snapshot).
+- `kiwi-custodia up` says whether it starts from the snapshot or from the base
+  image (it always said "the first start installs the baseline"), and `stop`
+  says the box was kept. A stop whose snapshot failed leaves the container in
+  place instead of removing it.
+- `install.sh uninstall --purge` removes the snapshot images as well; without
+  `--purge` they stay, with the homes.
+
 ## 0.2.0
 
 A box keeps what you put in it, speaks bash, and can be any image.

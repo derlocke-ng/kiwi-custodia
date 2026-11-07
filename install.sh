@@ -106,11 +106,13 @@ do_uninstall() {
     podman rmi -f kiwi-custodia/tunnel:latest >/dev/null 2>&1 || true
 
     if [[ "${KIWI_PURGE:-0}" == 1 || "${2:-}" == --purge ]]; then
-        echo "purging $DATA and $CONFIG — every box's home is being deleted"
+        echo "purging $DATA and $CONFIG — every box's home and snapshot is being deleted"
         rm -rf "$DATA" "$CONFIG"
+        podman images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^localhost/$APP/box-" \
+            | xargs -r podman rmi -f >/dev/null 2>&1 || true
         rm -f "${XDG_DATA_HOME:-$HOME/.local/share}"/icons/hicolor/*/apps/kc-*.* 2>/dev/null || true
     else
-        echo "kept $DATA (pass --purge to remove the boxes and their homes)"
+        echo "kept $DATA and the boxes' snapshot images (pass --purge to remove them)"
     fi
     echo "uninstalled $APP"
 }

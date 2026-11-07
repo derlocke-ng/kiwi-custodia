@@ -21,6 +21,10 @@ ROLE_LABEL = "kiwi-custodia.role"  # box | tunnel
 BOX_LABEL = "kiwi-custodia.box"  # box id, on a box
 EXIT_LABEL = "kiwi-custodia.exit"  # exit id, on a box and on a tunnel
 DISTRO_LABEL = "kiwi-custodia.distro"  # distro key, on a box
+# On a box: kiwi-proxy (0.7.1 and later) commits the container to this image
+# before removing it along with its gateway — taking the exit down in Kiwi Proxy
+# used to delete everything installed in the box. Older kiwi-proxy ignores it.
+SNAPSHOT_LABEL = getattr(proxy_paths, "SNAPSHOT_LABEL", "kiwi-proxy.snapshot")
 FILTER = f"label={ROLE_LABEL}"
 
 TUNNEL_IMAGE = f"{APP}/tunnel:latest"

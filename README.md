@@ -58,8 +58,9 @@ bash, `--package NAME` for things the first start should install, `--no-gpu`,
 `set` changes a box afterwards, `--exit OTHER` included: the box is stopped for
 it and starts again on the new exit with everything that was installed in it —
 a box is committed to a snapshot image when it stops, and the next start comes
-from that. `reset` goes back to the base image (the home stays); `rm` deletes the
-box and its home.
+from that. kiwi-proxy does the same before it removes a box with the exit (the
+stop button in Kiwi Proxy, `kiwi-proxy down`), from 0.7.1 on. `reset` goes back
+to the base image (the home stays); `rm` deletes the box and its home.
 
 ### The app
 
