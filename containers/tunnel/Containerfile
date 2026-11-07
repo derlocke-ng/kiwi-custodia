@@ -1,0 +1,36 @@
+# kiwi-custodia tunnel sidecar: tun2socks in a kiwi-proxy gateway's namespace.
+#
+# It joins the gateway (--network container:kf-gw-…), creates a TUN device there,
+# makes it the namespace's default route and feeds every packet into the
+# gateway's own forwarder at 127.0.0.1:1080 — so a box joined to the same
+# namespace has everything tunneled without configuring anything.
+#
+# tun2socks is pinned by version and checksum; the release zip holds one static
+# binary. python3 is only for the DNS stub a remote-DNS exit (Tor) needs.
+FROM docker.io/library/alpine:3.21
+
+ARG TUN2SOCKS_VERSION=v2.7.0
+# sha256 of tun2socks-linux-<arch>.zip for that version
+ARG TUN2SOCKS_SHA256_AMD64=a612baa287a3b6de6221f74fd02b442a50888508227ecf51e1288a5ccbb77381
+ARG TUN2SOCKS_SHA256_ARM64=3931476c9cfa8fa236d23aeaf36767df0eb27cc11ecaab699faba57744450f49
+
+RUN apk add --no-cache iproute2 nftables python3 \
+    && apk add --no-cache --virtual .fetch curl unzip \
+    && case "$(uname -m)" in \
+         x86_64)  arch=amd64; sum="$TUN2SOCKS_SHA256_AMD64" ;; \
+         aarch64) arch=arm64; sum="$TUN2SOCKS_SHA256_ARM64" ;; \
+         *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL -o /tmp/t2s.zip \
+         "https://github.com/xjasonlyu/tun2socks/releases/download/${TUN2SOCKS_VERSION}/tun2socks-linux-${arch}.zip" \
+    && echo "${sum}  /tmp/t2s.zip" | sha256sum -c - \
+    && unzip -q /tmp/t2s.zip -d /tmp \
+    && install -m 755 "/tmp/tun2socks-linux-${arch}" /usr/local/bin/tun2socks \
+    && rm -rf /tmp/t2s.zip "/tmp/tun2socks-linux-${arch}" \
+    && apk del .fetch
+
+COPY entrypoint.sh /usr/local/bin/kc-tunnel
+COPY dnsstub.py /usr/local/bin/kc-dnsstub
+RUN chmod 755 /usr/local/bin/kc-tunnel /usr/local/bin/kc-dnsstub
+
+ENTRYPOINT ["/usr/local/bin/kc-tunnel"]

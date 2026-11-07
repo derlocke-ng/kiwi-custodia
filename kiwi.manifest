@@ -1,0 +1,25 @@
+# kiwi.manifest — app metadata for kiwi-updater
+NAME=kiwi-custodia
+DESCRIPTION=Distro containers whose every byte leaves through a kiwi-proxy exit — install anything, run it on your desktop, through the tunnel
+VERSION=0.1.0
+AUTHOR=derlocke-ng
+HOMEPAGE=https://github.com/derlocke-ng/kiwi-custodia
+LICENSE=GPL-3.0-or-later
+
+COMPONENTS=cli gui
+CATEGORY=Security
+TAGS=distrobox container proxy socks5 vpn tor tunnel podman fedora ubuntu arch kiwi-proxy
+
+SCOPES=user
+
+ICON=data/eu.kiwinetwork.KiwiCustodia.svg
+ABOUT=README.md
+
+# Checked with `command -v` before installing; kiwi-proxy is a kiwi app, which
+# kiwi installs first when it is missing. The tunnel image is built by
+# `kiwi-custodia setup` on first run, not at install time; distro images are
+# pulled when a box is first started. The GUI needs GTK 4 + libadwaita
+# (PyGObject); KIWI_GUI=0 installs without it.
+DEPENDS=kiwi-proxy podman python3
+
+INSTALLER=install.sh

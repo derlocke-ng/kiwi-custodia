@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv*/
+.ruff_cache/
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+# Working notes for the coding agent, like CLAUDE.md in the other kiwi apps.
+CLAUDE.md
+.claude/

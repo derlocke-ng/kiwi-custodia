@@ -1,0 +1,33 @@
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: derlocke-ng/kiwi-proxy
+          path: kiwi-proxy
+      - run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q python3-venv
+          python3 -m venv .venv
+          .venv/bin/pip install -q pydantic pytest ruff
+      - run: .venv/bin/ruff check src tests containers && .venv/bin/ruff format --check src tests containers
+      - run: for f in containers/tunnel/entrypoint.sh containers/box/kc-init.sh install.sh; do bash -n "$f"; done
+      - run: .venv/bin/python -m pytest tests/unit -q
+        env:
+          PYTHONPATH: src:.:kiwi-proxy/src
+
+  # The tunnel image, built from a clean cache: the pinned tun2socks download
+  # and its checksum are what this checks.
+  tunnel-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: podman build --no-cache -t kiwi-custodia/tunnel:ci -f containers/tunnel/Containerfile containers/tunnel
+      - run: podman run --rm --entrypoint tun2socks kiwi-custodia/tunnel:ci --version

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Kiwi Custodia
+GenericName=Tunneled distro containers
+Comment=Distro containers whose every byte leaves through a kiwi-proxy exit
+Exec=kiwi-custodia-gui
+Icon=eu.kiwinetwork.KiwiCustodia
+Terminal=false
+Categories=System;Network;Security;
+StartupNotify=true
+StartupWMClass=eu.kiwinetwork.KiwiCustodia
+Keywords=distrobox;container;proxy;socks5;vpn;tor;tunnel;box;
