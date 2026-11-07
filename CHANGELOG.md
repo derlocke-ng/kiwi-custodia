@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2
+
+- The window said "the first start installs its baseline, give it a minute" on
+  every start, a start from the snapshot included; it now says which of the two
+  it is, as the command line does since 0.2.1.
+
 ## 0.2.1
 
 - **Taking the exit down in Kiwi Proxy no longer empties the box.** A box is a

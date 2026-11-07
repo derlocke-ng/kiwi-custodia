@@ -360,9 +360,12 @@ class Window(Adw.ApplicationWindow):
             return
         self._busy.add(box.id)
         self.refresh(rebuild=False)
-        self._toast(
-            f"Starting {box.name} — the first start installs its baseline, give it a minute"
-        )
+        if boxes.has_snapshot(box):
+            self._toast(f"Starting {box.name} from its snapshot")
+        else:
+            self._toast(
+                f"Starting {box.name} — the first start installs its baseline, give it a minute"
+            )
 
         def done(up) -> None:
             self._busy.discard(box.id)
