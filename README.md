@@ -103,6 +103,56 @@ different exits. A kiwi-fox profile and a box on the same exit share it too.
 UDP has no way out of a gateway (no QUIC, no WebRTC media), and that holds in
 a box: an app's UDP is dropped, and the sane ones fall back to TCP.
 
+## A box on your other devices
+
+Boxes go into the same encrypted snapshot folder as Kiwi Proxy's exits and Kiwi
+Fox's profiles; your sync client (Nextcloud) carries it to your other devices.
+A snapshot does not hold the box's image (about 2 GB for a Fedora box with a
+desktop app in it). It holds what you did to the box, recorded by itself every
+time:
+
+- **The packages you added**, from the package manager's own list of what was
+  installed on purpose, minus what the base image and the baseline bring.
+- **The system files you added or changed** outside the home: repository files
+  and signing keys, edits under `/etc`, what you unpacked into `/opt` or
+  `/usr/local`. A file that belongs to a package unchanged is left out, since
+  the package brings it back. So is what is this machine's (users, hostname,
+  resolver, certificates bundles).
+- **A package installed from a downloaded file** travels as its files, with what
+  it requires.
+- **The home**, without `.cache`.
+
+On the other device the box is rebuilt from its base image at its first start,
+through its own exit: repositories and keys first, then the packages, then the
+remaining files, then the setup script; the home is already there.
+
+```bash
+kiwi-proxy snapshot setup ~/Nextcloud/kiwi-snapshots   # once per device; the same in Preferences
+kiwi-custodia snapshot list
+kiwi-custodia snapshot show work                       # what its newest snapshot carries
+kiwi-custodia snapshot restore work                    # its exit must be restored in Kiwi Proxy first
+kiwi-custodia set work --setup-script setup.sh         # for anything a list cannot express
+```
+
+- **When:** after a box ran and stopped, after you change it, and whenever you
+  ask (Snapshots… in its menu, or "Snapshot everything now"). A running box is
+  committed to its image first, so the recording reads a consistent system.
+- **The setup script** (the editor's "Extra setup script") runs once as root
+  after the packages whenever the box is built: at its first start here, and on
+  another device when it is rebuilt.
+- **Starting an older copy asks first**, and a box open on another device says
+  so, as in Kiwi Fox.
+- **Its exit comes from Kiwi Proxy.** A box whose exit is not on this device
+  says "restore it in Kiwi Proxy first"; Kiwi Custodia never makes or restores
+  proxies.
+
+Three limits, so they do not surprise you: packages are installed again from
+their repositories, so the other device may get newer versions; a large program
+unpacked by hand makes the snapshot as large as that program (the editor shows
+the size); and only dnf, apt, pacman, zypper and apk boxes are recorded, other
+images carry their home and declared packages only. The image a box is committed
+to stays on its device and remains the fast path there.
+
 ## What it is not
 
 A box is **network custody, not a sandbox from the desktop**. It gets your

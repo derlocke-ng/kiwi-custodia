@@ -33,6 +33,9 @@ class Box(Strict):
     shell: str | None = None  # the user's login shell in the box; bash when None and present
     desktop_entry: bool = False  # a terminal entry for the box in the app grid
     exported: list[str] = Field(default_factory=list)  # desktop file ids exported to the host
+    # Runs once as root when the box is rebuilt on another device, after its
+    # packages and files: for what a package list cannot say.
+    setup_script: str = ""
     notes: str = ""
 
     @property

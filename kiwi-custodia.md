@@ -29,6 +29,11 @@ docs/architecture.md for how the three containers fit in one namespace.
 - Specs are rendered apart from running them (`boxes.run_args`,
   `tunnel.spec`) and tested with a fake podman (tests/unit/conftest.py); the
   real namespace behaviour needs a machine with podman.
+- Snapshots record from the box's committed image, never from a running box:
+  `kc-record.sh` (POSIX sh, like kc-init) runs in throwaway `--network none`
+  containers. kc-init's baseline list lives in kc-init alone (`kc-init
+  baseline`); recipe.py asks it rather than keeping a copy. A restore removes
+  any image of the box on this device, so the next start is the rebuild.
 
 ## Things to verify on a real machine (not yet measured)
 

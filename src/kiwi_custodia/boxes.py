@@ -54,6 +54,15 @@ class BoxUp:
 
 
 # ------------------------------------------------------------------- pieces
+REBUILD_DIR = "/run/kc-rebuild"
+SETUP_FILE = "/run/kc-setup.sh"
+
+
+def rebuild_pending(box: Box) -> bool:
+    """Restored from a snapshot and not yet rebuilt into an image of its own."""
+    return (paths.box_rebuild_dir(box.id) / "id").is_file()
+
+
 def init_script() -> Path:
     """containers/box/kc-init.sh, in a checkout or an installed copy."""
     here = Path(__file__).resolve()
@@ -84,6 +93,8 @@ def run_args(
     *,
     detach: bool = True,
     image: str | None = None,
+    rebuild: bool = False,
+    setup: bool = False,
 ) -> list[str]:
     """The `podman run` for a box. Rendered apart from running it so it can be
     tested without podman.
@@ -147,6 +158,12 @@ def run_args(
         (str(init_script()), INIT_SCRIPT, "ro"),
         *sess.volumes,
     ]
+    if rebuild:
+        # restored from a snapshot: kc-init rebuilds the system from this, once
+        volumes.append((str(paths.box_rebuild_dir(box.id)), REBUILD_DIR, "ro"))
+    if setup:
+        # its setup script: kc-init runs it once, when the box is built
+        volumes.append((str(paths.box_setup_script(box.id)), SETUP_FILE, "ro"))
     for src, dst, opts in volumes:
         args += ["--volume", f"{src}:{dst}:{opts}"]
     for dev in sess.devices:
@@ -168,6 +185,18 @@ def run_args(
 # -------------------------------------------------------------- snapshots
 def has_snapshot(box: Box) -> bool:
     return podman.image_exists(paths.box_image(box.id))
+
+
+def image_size(box: Box) -> int:
+    """The size of the box's snapshot image (what stays on this device); 0 when
+    it has none."""
+    proc = podman._run(
+        ["image", "inspect", "--format", "{{.Size}}", paths.box_image(box.id)], check=False
+    )
+    try:
+        return int(proc.stdout.strip()) if proc.returncode == 0 else 0
+    except ValueError:
+        return 0
 
 
 def snapshot(box: Box) -> bool:
@@ -255,6 +284,18 @@ def wait_ready(name: str, timeout: float) -> tuple[bool, bool]:
     return False, first
 
 
+def _could_not_install(logs: str) -> list[str]:
+    """The packages kc-init said it could not install at this start."""
+    found: list[str] = []
+    for line in logs.splitlines():
+        _, mark, rest = line.partition("WARNING: could not install:")
+        if mark:
+            for pkg in rest.split("(")[0].split():
+                if pkg not in found:
+                    found.append(pkg)
+    return found
+
+
 def up(box: Box, *, timeout: float = 900.0) -> BoxUp:
     """Bring the box up, or hand back the one already running."""
     if not podman.available():
@@ -275,9 +316,13 @@ def up(box: Box, *, timeout: float = 900.0) -> BoxUp:
         snapshot(box)
 
     image = box.image
+    rebuild = False
     if has_snapshot(box):
         image = paths.box_image(box.id)  # the box as it was when last stopped
         notes.append("from its snapshot: what was installed is still there")
+    elif rebuild_pending(box):
+        rebuild = True
+        notes.append("restored from a snapshot: its packages and files are put back at this start")
     elif podman.image_exists(box.image):
         notes.append(f"from the base image {box.image}: a fresh box, the baseline gets installed")
     elif not podman.image_exists(box.image):
@@ -291,7 +336,13 @@ def up(box: Box, *, timeout: float = 900.0) -> BoxUp:
     sess = session.current(gpu=box.gpu)
     notes += sess.notes
     resolv = tunnel.write_resolv_conf(ex)
-    args = run_args(box, ex, gw.name, str(resolv), sess, image=image)
+    setup = image == box.image and bool(box.setup_script.strip())
+    if setup:
+        script = paths.box_setup_script(box.id)
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text(box.setup_script.rstrip() + "\n")
+        notes.append("its setup script runs once, after the packages")
+    args = run_args(box, ex, gw.name, str(resolv), sess, image=image, rebuild=rebuild, setup=setup)
     podman.rm(name)
     try:
         podman._run(args, timeout=180)
@@ -305,7 +356,14 @@ def up(box: Box, *, timeout: float = 900.0) -> BoxUp:
             _let_go(box, ex.id, name)
             raise BoxError(f"box exited during start:\n{logs}")
         notes.append("the box did not report ready in time; its init may still be installing")
+    elif missing := _could_not_install(podman.logs(name, tail=200)):
+        notes.append(f"could not install {', '.join(missing)}; tried again at the next start")
     store.save(box)
+    from . import snapshots as box_snapshots  # late: it imports this module
+
+    box_snapshots.started(box)
+    if rebuild and ready:
+        box_snapshots.rebuilt(box)
     return BoxUp(box, gw.name, tun.name, name, first_start=first, notes=notes)
 
 
@@ -326,24 +384,32 @@ def _let_go(box: Box, exit_id: str, name: str) -> None:
             gateway.release(exit_id, ignore=(name, paths.tunnel_name(exit_id)))
 
 
-def stop(box: Box, *, keep: bool = True) -> None:
+def stop(box: Box, *, keep: bool = True) -> str | None:
     """The box's container goes — committed to its snapshot first (`keep`), so
     the next start has everything that was installed in it. The exit's sidecar
     goes with it unless another box on the exit is running; the gateway goes
     unless something else — a kiwi-fox browser, a pentest tool, `kiwi-proxy up`
-    — still uses it."""
+    — still uses it. With `keep`, a box that ran since its last snapshot in the
+    snapshot folder gets one; the return is a line when that did not work."""
     if not podman.available():
-        return
+        return None
     name = paths.box_name(box.id)
-    if keep and podman.exists(name):
+    was = podman.exists(name)
+    if keep and was:
         snapshot(box)  # raises, and the container stays, rather than lose its contents
     podman.rm(name)
-    if _others_running(box.exit, except_box=box.id):
-        return
-    tun = paths.tunnel_name(box.exit)
-    tunnel.down(box.exit)
-    with contextlib.suppress(Exception):
-        gateway.release(box.exit, ignore=(name, tun))
+    if not _others_running(box.exit, except_box=box.id):
+        tun = paths.tunnel_name(box.exit)
+        tunnel.down(box.exit)
+        with contextlib.suppress(Exception):
+            gateway.release(box.exit, ignore=(name, tun))
+    if not (keep and was):
+        return None
+    from . import snapshots as box_snapshots  # late: it imports this module
+
+    note = box_snapshots.after_stop(box) if box_snapshots.available() else None
+    box_snapshots.settled(box)
+    return note
 
 
 def running(box: Box) -> bool:
@@ -428,6 +494,9 @@ def reset(box: Box) -> None:
     stays; the next start installs the baseline again."""
     stop(box, keep=False)
     forget_snapshot(box)
+    import shutil
+
+    shutil.rmtree(paths.box_rebuild_dir(box.id), ignore_errors=True)
 
 
 def reap() -> list[str]:

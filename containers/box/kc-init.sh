@@ -26,11 +26,16 @@ set -eu
 log() { printf 'kc-init: %s\n' "$*"; }
 die() { printf 'kc-init: FATAL: %s\n' "$*" >&2; exit 1; }
 
-: "${KC_USER:?KC_USER is required}"
-: "${KC_UID:?KC_UID is required}"
-: "${KC_GID:?KC_GID is required}"
+# `kc-init baseline` (with KC_FAMILY) prints the baseline packages and stops.
+MODE="${1:-}"
+
 KC_FAMILY="${KC_FAMILY:-auto}"
-KC_HOME="${KC_HOME:-/home/$KC_USER}"
+if [ "$MODE" != baseline ]; then
+    : "${KC_USER:?KC_USER is required}"
+    : "${KC_UID:?KC_UID is required}"
+    : "${KC_GID:?KC_GID is required}"
+fi
+KC_HOME="${KC_HOME:-/home/${KC_USER:-user}}"
 KC_SHELL="${KC_SHELL:-}"
 # "auto": any image — find its package manager.
 if [ "$KC_FAMILY" = auto ]; then
@@ -49,20 +54,25 @@ export DEBIAN_FRONTEND=noninteractive
 # ----------------------------------------------------------------- packages
 baseline() {
     case "$KC_FAMILY" in
-      dnf)    echo "sudo shadow-utils passwd ca-certificates curl less bash bash-completion procps-ng gawk
+      dnf)    echo "tar sudo shadow-utils passwd ca-certificates curl less bash bash-completion procps-ng gawk
                     glibc-langpack-en mesa-dri-drivers mesa-vulkan-drivers libglvnd-egl libglvnd-gles
                     dejavu-sans-fonts xdg-utils" ;;
-      apt)    echo "sudo passwd ca-certificates curl less bash bash-completion procps locales gawk
+      apt)    echo "tar sudo passwd ca-certificates curl less bash bash-completion procps locales gawk
                     libgl1 libegl1 libgles2 mesa-vulkan-drivers fonts-dejavu-core xdg-utils" ;;
-      pacman) echo "sudo shadow ca-certificates curl less bash bash-completion procps-ng gawk
+      pacman) echo "tar sudo shadow ca-certificates curl less bash bash-completion procps-ng gawk
                     mesa vulkan-icd-loader ttf-dejavu xdg-utils" ;;
-      zypper) echo "sudo shadow ca-certificates curl less bash bash-completion procps gawk
+      zypper) echo "tar sudo shadow ca-certificates curl less bash bash-completion procps gawk
                     Mesa-dri libvulkan1 dejavu-fonts xdg-utils" ;;
-      apk)    echo "sudo shadow bash ca-certificates curl less bash-completion procps gawk
+      apk)    echo "tar sudo shadow bash ca-certificates curl less bash-completion procps gawk
                     mesa-dri-gallium mesa-egl mesa-gles font-dejavu xdg-utils" ;;
       *) die "unknown package family $KC_FAMILY" ;;
     esac
 }
+
+if [ "$MODE" = baseline ]; then
+    baseline | tr -s ' \n' '\n\n' | grep -v '^$'
+    exit 0
+fi
 
 pkg_install() {
     # shellcheck disable=SC2086
@@ -100,6 +110,91 @@ else
         pkg_install $missing && printf '%s\n' $missing >> "$DONE_PKGS" \
             || log "WARNING: some of$missing did not install"
     fi
+fi
+
+# ------------------------------------------------------------------ rebuild
+# A box restored from a snapshot on another device starts from its base image;
+# kiwi-custodia mounts what the snapshot recorded at /run/kc-rebuild: the
+# repositories and keys you added, the packages you installed, the system files
+# you added or changed. Applied once, in that order.
+REBUILD=/run/kc-rebuild
+REBUILT=/var/lib/kiwi-custodia/rebuilt
+# packages a rebuild could not install (a mirror down, the exit slow): tried
+# again at every start until they install; the box's image keeps the list
+MISSING=/var/lib/kiwi-custodia/rebuild-missing
+REBUILT_NOW=0
+
+install_list() {
+    # all at once; when that fails, one by one, naming the ones that would not
+    [ "$#" -gt 0 ] || return 0
+    if pkg_install "$@" >/dev/null 2>&1; then return 0; fi
+    failed=""
+    for pkg in "$@"; do pkg_install "$pkg" >/dev/null 2>&1 || failed="$failed $pkg"; done
+    if [ -n "$failed" ]; then
+        log "WARNING: could not install:$failed (tried again at the next start)"
+        mkdir -p "$(dirname "$MISSING")"
+        # shellcheck disable=SC2086
+        printf '%s\n' $failed >> "$MISSING"
+    fi
+}
+
+rebuild() {
+    [ -f "$REBUILD/id" ] || return 0
+    id="$(cat "$REBUILD/id")"
+    [ "$(cat "$REBUILT" 2>/dev/null)" = "$id" ] && return 0
+    log "rebuilding from a snapshot: repositories, packages, files"
+    rm -f "$MISSING"
+    if [ -s "$REBUILD/repo-files.txt" ] && [ -f "$REBUILD/files.tar" ]; then
+        tar -xpf "$REBUILD/files.tar" -C / -T "$REBUILD/repo-files.txt" 2>/dev/null \
+            || log "WARNING: some repository files did not unpack"
+        [ "$KC_FAMILY" = apt ] && apt-get -qq update >/dev/null 2>&1
+    fi
+    if [ -s "$REBUILD/packages.txt" ]; then
+        # shellcheck disable=SC2046
+        set -- $(cat "$REBUILD/packages.txt")
+        log "installing $# packages that were added to the box"
+        install_list "$@"
+    fi
+    if [ -s "$REBUILD/requires.txt" ] && [ "$KC_FAMILY" = dnf ]; then
+        # what packages installed from files need; they come back as files
+        # shellcheck disable=SC2046
+        dnf -y -q install --skip-unavailable --setopt=install_weak_deps=False $(cat "$REBUILD/requires.txt") \
+            >/dev/null 2>&1 || log "WARNING: some requirements of packages installed from files are missing"
+    fi
+    if [ -f "$REBUILD/files.tar" ]; then
+        tar -xpf "$REBUILD/files.tar" -C / 2>/dev/null || log "WARNING: some files did not unpack"
+        log "system files put back: $(tar -tf "$REBUILD/files.tar" 2>/dev/null | wc -l)"
+    fi
+    mkdir -p "$(dirname "$REBUILT")"
+    printf '%s\n' "$id" > "$REBUILT"
+    REBUILT_NOW=1
+    log "rebuilt"
+}
+rebuild
+
+retry_missing() {
+    [ "$REBUILT_NOW" = 0 ] && [ -s "$MISSING" ] || return 0
+    # shellcheck disable=SC2046
+    set -- $(sort -u "$MISSING")
+    rm -f "$MISSING"
+    log "installing what the rebuild could not: $*"
+    install_list "$@"
+    [ -s "$MISSING" ] || log "installed what the rebuild could not"
+}
+retry_missing
+
+# ------------------------------------------------------------- setup script
+# The box's own script (its editor's "Extra setup script"): once per build, as
+# root, after the packages — on the box's first start here, and when it is
+# rebuilt from a snapshot on another device. kiwi-custodia mounts it only when
+# the box starts from its base image.
+SETUP=/run/kc-setup.sh
+SETUP_DONE=/var/lib/kiwi-custodia/setup-done
+if [ -s "$SETUP" ] && [ ! -e "$SETUP_DONE" ]; then
+    log "running the box's setup script"
+    sh "$SETUP" || log "WARNING: the setup script ended with an error"
+    mkdir -p "$(dirname "$SETUP_DONE")"
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$SETUP_DONE"
 fi
 
 # A box made before the baseline grew: the few tools launcher scripts assume.

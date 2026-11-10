@@ -207,6 +207,31 @@ class BoxEditor(Adw.Dialog):
         group.add(self.shell_row)
         page.add(group)
 
+        if box is not None:
+            self._add_travels(page, box)
+
+        group = Adw.PreferencesGroup(
+            title="Extra setup script",
+            description="Optional. Runs once as root after the packages, whenever the box is "
+            "built: at its first start here, and on another device when it is rebuilt from a "
+            "snapshot. For anything the lists above cannot express.",
+        )
+        self.script_view = Gtk.TextView(
+            monospace=True,
+            wrap_mode=Gtk.WrapMode.WORD_CHAR,
+            top_margin=10,
+            bottom_margin=10,
+            left_margin=12,
+            right_margin=12,
+            height_request=90,
+            accepts_tab=False,
+        )
+        self.script_view.add_css_class("card")
+        self.script_view.update_property([Gtk.AccessibleProperty.LABEL], ["Extra setup script"])
+        self.script_view.get_buffer().set_text(box.setup_script if box else "")
+        group.add(self.script_view)
+        page.add(group)
+
         self.error = Adw.Banner(revealed=False)
         view = Adw.ToolbarView()
         view.add_top_bar(header)
@@ -214,6 +239,88 @@ class BoxEditor(Adw.Dialog):
         view.set_content(Gtk.ScrolledWindow(child=page, vexpand=True))
         self.set_child(view)
         self._distro_note()
+
+    def _add_travels(self, page: Adw.PreferencesPage, box: Box) -> None:
+        """What the box's snapshots carry to another device (mock-up 14)."""
+        self.travels_group = Adw.PreferencesGroup(
+            title="What travels to another device",
+            description="Recorded by itself at every snapshot.",
+        )
+
+        def tag() -> Gtk.Label:
+            label = Gtk.Label(valign=Gtk.Align.CENTER)
+            label.add_css_class("dim-label")
+            label.add_css_class("numeric")
+            return label
+
+        self.travel_packages = Adw.ActionRow(title="Packages you added", use_markup=False)
+        self.travel_files = Adw.ActionRow(
+            title="System files you added or changed", use_markup=False
+        )
+        self.travel_home = Adw.ActionRow(title="Home", use_markup=False)
+        self.travel_home.set_subtitle("everything in it except caches")
+        self.travel_tags = []
+        for row in (self.travel_packages, self.travel_files, self.travel_home):
+            row.set_subtitle_lines(2)
+            label = tag()
+            row.add_suffix(label)
+            self.travel_tags.append(label)
+            self.travels_group.add(row)
+        page.add(self.travels_group)
+        self.travel_packages.set_subtitle("…")
+        self.travel_files.set_subtitle("…")
+        from .. import snapshots as box_snapshots
+
+        worker.run(lambda: box_snapshots.travels(box), self._show_travels, lambda _e: None)
+
+    def _show_travels(self, t) -> None:
+        from .. import snapshots as box_snapshots
+
+        def size(n: int) -> str:
+            if n >= 1024**3:
+                return f"{n / 1024**3:.1f} GB"
+            return box_snapshots.snap.size_text(n) if box_snapshots.snap else f"{n} B"
+
+        pkg_tag, files_tag, home_tag = self.travel_tags
+        home_tag.set_label(size(t.home_size))
+        rebuilt = "On another device the box is rebuilt from the base image with these, "
+        rebuilt += "then its home is put back."
+        if t.image_size:
+            rebuilt += f" The {size(t.image_size)} image stays here."
+        if t.state == "off":
+            text = (
+                "Set up a snapshot folder in Preferences and every snapshot records these by "
+                "itself. " + rebuilt
+            )
+            waiting = "recorded at the first snapshot"
+        elif t.state == "locked":
+            text = "Snapshots are locked on this device: unlock them to see what was recorded."
+            waiting = "unlock snapshots to see it"
+        elif t.state == "none":
+            text = (
+                "Recorded by itself at every snapshot; the first is taken when the box stops "
+                "after it ran. " + rebuilt
+            )
+            waiting = "recorded at the first snapshot"
+        else:
+            text = f"Recorded by itself at every snapshot, the last {t.when}. " + rebuilt
+            waiting = ""
+        self.travels_group.set_description(text)
+        if waiting:
+            self.travel_packages.set_subtitle(waiting)
+            self.travel_files.set_subtitle(waiting)
+            return
+        if not t.recorded:
+            note = t.notes[0] if t.notes else "not recorded for this box"
+            self.travel_packages.set_subtitle(f"only the home and its declared packages: {note}")
+            self.travel_files.set_subtitle("none recorded")
+            return
+        names = t.packages
+        shown = ", ".join(names[:4]) + (f" and {len(names) - 4} more" if len(names) > 4 else "")
+        self.travel_packages.set_subtitle(shown or "none")
+        pkg_tag.set_label(str(len(names)))
+        self.travel_files.set_subtitle(t.files_summary or "none")
+        files_tag.set_label(size(t.files_size) if t.files else "")
 
     def _distro_note(self) -> None:
         key = list(distros.DISTROS)[self.distro_row.get_selected()]
@@ -242,6 +349,9 @@ class BoxEditor(Adw.Dialog):
         key = list(distros.DISTROS)[self.distro_row.get_selected()]
         image = self.image_row.get_text().strip() or None
         shell = self.shell_row.get_text().strip() or None
+        buf = self.script_view.get_buffer()
+        script = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+        script = script.rstrip() + "\n" if script.strip() else ""
 
         def work():
             from .. import desktop
@@ -270,8 +380,12 @@ class BoxEditor(Adw.Dialog):
                 box.gpu = gpu
                 box.shell = shell
             box.desktop_entry = entry
+            box.setup_script = script
             store.save(box)
             desktop.sync_entry(box, describe(box))
+            from .. import snapshots as box_snapshots
+
+            box_snapshots.changed(box)
             return box
 
         def done(box) -> None:

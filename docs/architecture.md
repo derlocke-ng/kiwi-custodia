@@ -80,11 +80,55 @@ which; `app=kiwi-custodia` is the family convention.
 ```
 ~/.local/share/kiwi-custodia/boxes/<id>/box.json    the box
 ~/.local/share/kiwi-custodia/boxes/<id>/home/       its home
+~/.local/share/kiwi-custodia/boxes/<id>/setup.sh    its setup script, for kc-init when it is built
+~/.local/share/kiwi-custodia/boxes/<id>/rebuild/    a restored box's recipe, until its next stop
 ~/.local/share/applications/eu.kiwinetwork.KiwiCustodia.box-<box>-<app>.desktop   an exported app
 ~/.local/share/applications/eu.kiwinetwork.KiwiCustodia.enter-<id>.desktop        a box's terminal entry
 ~/.local/share/icons/hicolor/<size>/apps/kc-<box>-<icon>.*                         exported apps' icons
 $XDG_RUNTIME_DIR/kiwi-custodia/tunnels/<exit>/resolv.conf
 ```
+
+## Snapshots
+
+A box's snapshot (in kiwi-proxy's encrypted folder, kind `box`) is a tar of:
+
+```
+box.json              the record (name, distro, exit, packages, setup script, exported apps)
+home/                 the home without .cache
+system/recipe.json    what was added to the system (below)
+system/files.tar      the recorded files, read out of the image
+```
+
+**Recording** reads the box's committed image (`localhost/kiwi-custodia/box-…`),
+never the box: `kc-record` runs in throwaway containers of that image and of the
+base image, with `--network none`.
+
+1. `kc-record packages` lists what the package manager says was installed on
+   purpose (`dnf repoquery --userinstalled`, `apt-mark showmanual`, `pacman -Qqe`,
+   zypper's AutoInstalled, apk's world), with the repository; `@commandline`
+   means a file. The base image's list, kc-init's baseline (`kc-init baseline`,
+   one list in one place) and the box's declared packages are subtracted.
+2. `podman diff` of the two images gives the candidate paths under `/etc`, `/opt`,
+   `/usr/local`, `/srv`, `/root` and the apt keyrings, minus this machine's files
+   (users, hostname, resolver, sudoers, certificate bundles, kiwi-custodia's own).
+3. `kc-record files` keeps the candidates no package owns and the ones changed
+   from their package (`rpm -V`, `dpkg --verify`, `pacman -Qkk`, `apk audit`).
+4. `kc-record local` gives a file-installed package's files and requirements.
+5. The kept files are read out as a tar (`tar -T`), the repository files among
+   them listed apart.
+
+**Rebuilding**: a restore writes the recipe to `boxes/<id>/rebuild/` and removes
+any image or container of the box on this device. The next `up` starts from the
+base image with that folder at `/run/kc-rebuild` (read-only); kc-init, after its
+baseline, unpacks the repository files, installs the packages (all at once, else
+one by one, naming the failures), the requirements of file-installed packages,
+unpacks every file, and writes the snapshot's id to
+`/var/lib/kiwi-custodia/rebuilt` so it happens once. Packages that would not
+install are listed in `/var/lib/kiwi-custodia/rebuild-missing`, which the image
+keeps, and tried again at every start until they install. The setup script is mounted
+at `/run/kc-setup.sh` whenever the box starts from its base image and runs once
+after that. Exported apps are exported again once the box is up; the first stop
+commits the result and the rebuild folder goes.
 
 ## Decisions
 

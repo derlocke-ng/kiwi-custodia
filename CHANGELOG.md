@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.3.0
+
+**Boxes on your other devices.** Boxes go into kiwi-proxy's encrypted snapshot
+folder, which your sync client (Nextcloud) carries to your other devices. Needs
+kiwi-proxy 0.8.1.
+
+- **What a snapshot holds:** the box's record, its home without `.cache`, and
+  what was added to its system, recorded from its committed image in throwaway
+  containers with no network: the packages you installed (dnf, apt, pacman,
+  zypper, apk), the repositories and signing keys you added, the system files
+  you added or changed outside the home, and a package installed from a file as
+  its files. Not the image.
+- **Rebuilt on the other device:** a restored box starts from its base image and
+  kc-init puts back, once, the repositories and keys, the packages, the files;
+  its exported apps go back into the app grid. The next stop commits the result
+  to its own image as usual. A package that does not install (a mirror down, the
+  exit slow) is named when the box comes up and tried again at every start until
+  it installs.
+- **Extra setup script:** in the editor and `kiwi-custodia set --setup-script`;
+  it runs once as root after the packages whenever the box is built.
+- **When:** after a box ran and stopped (the window catches up on what stopped
+  while it was closed), after it changed, and when asked. Before a start, a newer
+  copy from another device or the box in use elsewhere asks first; exported apps
+  ask in a small window.
+- **In the app:** Preferences (Ctrl+,) with the Snapshots page, "Snapshot
+  everything now", a banner when snapshots are locked, boxes in the folder that
+  are not on this device with Restore, Snapshots… per box, and "What travels to
+  another device" in the editor with the sizes.
+- **Command line:** `kiwi-custodia snapshot list|now|history|show|restore|forget`,
+  `up --as-is` and `--restore`; setup, unlock and lock are kiwi-proxy's
+  (`kiwi-custodia snapshot setup` hands over to it).
+- A box whose exit is not on this device says to restore that exit in Kiwi Proxy
+  first. A restore keeps what was here as a snapshot first, so it can be undone.
+
 ## 0.2.3
 
 - **A bigger window, and the size you leave it at.** The window opened at

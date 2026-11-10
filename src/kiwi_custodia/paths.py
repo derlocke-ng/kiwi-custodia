@@ -74,6 +74,13 @@ def box_home(box_id: str) -> Path:
     return box_dir(box_id) / "home"
 
 
+def box_rebuild_dir(box_id: str) -> Path:
+    """What a snapshot from another device recorded about the box (packages,
+    system files), until the box was rebuilt from it and its own
+    snapshot image holds the result."""
+    return box_dir(box_id) / "rebuild"
+
+
 def box_runtime_dir(box_id: str) -> Path:
     d = runtime_dir() / "boxes" / box_id
     d.mkdir(parents=True, exist_ok=True)
@@ -111,3 +118,9 @@ def tunnel_name(exit_id: str) -> str:
     """One tunnel sidecar per exit, shared by every box on it — it sits in the
     gateway's namespace, so there can only be one default route anyway."""
     return f"{PREFIX}-tun-{exit_id[:12]}"
+
+
+def box_setup_script(box_id: str) -> Path:
+    """The box's setup script, written out for kc-init when the box starts from
+    its base image."""
+    return box_dir(box_id) / "setup.sh"
