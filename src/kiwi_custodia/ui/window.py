@@ -28,6 +28,10 @@ if box_snapshots.available():
     from kiwi_proxy.ui import snapshots as snapshot_ui  # noqa: E402
 else:  # pragma: no cover - kiwi-proxy older than 0.8.1
     snap = snapshot_ui = None
+try:
+    from kiwi_proxy.ui import storage as storage_ui  # noqa: E402
+except ImportError:  # pragma: no cover - kiwi-proxy older than 0.8.2
+    storage_ui = None
 
 
 # A window large enough for the largest dialog (the apps dialog is 720×520, the
@@ -94,6 +98,8 @@ class Window(Adw.ApplicationWindow):
             menu.append("Snapshot everything now", "win.snapshot-all")
         menu.append("Set up environment", "win.setup")
         menu.append("Check environment", "win.doctor")
+        if storage_ui is not None:
+            menu.append("Check and repair", "win.storage")
         menu.append("Tidy up unused containers", "win.reap")
         menu.append("Stop every box", "win.stop-all")
         menu.append("About Kiwi Custodia", "app.about")
@@ -168,6 +174,7 @@ class Window(Adw.ApplicationWindow):
             ("stop-all", lambda *_: self._stop_all()),
             ("preferences", lambda *_: self._open_preferences()),
             ("snapshot-all", lambda *_: self._snapshot_all()),
+            ("storage", lambda *_: storage_ui and storage_ui.check_and_repair(self, self.refresh)),
         ):
             action = Gio.SimpleAction.new(name, None)
             action.connect("activate", handler)
@@ -189,6 +196,7 @@ class Window(Adw.ApplicationWindow):
 
         self.refresh()
         self._check_environment()
+        self._repair_on_start()
         self._catch_up()
         GLib.timeout_add_seconds(REFRESH_SECONDS, self._tick)
 
@@ -713,6 +721,15 @@ class Window(Adw.ApplicationWindow):
             done,
             lambda exc: self._alert(f"Could not restore {name}", str(exc)),
         )
+
+    def _repair_on_start(self) -> None:
+        def done(notes) -> None:
+            for note in notes[:3]:
+                self._toast(note[0].upper() + note[1:])
+            if notes:
+                self.refresh()
+
+        worker.run(boxes.repair, done, lambda _exc: None)
 
     def _catch_up(self) -> None:
         """At start: snapshot stopped boxes that changed since their last snapshot."""

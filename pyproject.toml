@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kiwi-custodia"
-version = "0.3.0"
+version = "0.3.1"
 description = "Distro containers whose every byte leaves through a kiwi-proxy exit — install anything, run it on your desktop, through the tunnel"
 requires-python = ">=3.12"
 license = { text = "GPL-3.0-or-later" }

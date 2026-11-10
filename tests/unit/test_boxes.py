@@ -3,6 +3,8 @@ what, and what goes when."""
 
 from __future__ import annotations
 
+import subprocess
+
 import pytest
 from conftest import make_exit
 from kiwi_proxy import gateway
@@ -303,3 +305,69 @@ def test_up_keeps_a_box_a_reboot_left_behind(a_box, an_exit, fake_podman):
     boxes.up(a_box)
     assert fake_podman.commits, "the exited container was committed before --replace"
     assert fake_podman.containers[name]["image"] == paths.box_image(a_box.id)
+
+
+# ------------------------------------------------------------------ repair
+def _leftover(monkeypatch, box, state="exited", readable=True):
+    from kiwi_proxy import storage
+
+    name = paths.box_name(box.id)
+    row = storage.Container(
+        id="c" * 64,
+        name=name,
+        state=state,
+        labels={"app": "kiwi-custodia", paths.ROLE_LABEL: "box", paths.BOX_LABEL: box.id},
+    )
+    monkeypatch.setattr(storage, "leftovers", lambda app: [row] if app == "kiwi-custodia" else [])
+    monkeypatch.setattr(storage, "containers", lambda: [row])
+    monkeypatch.setattr(storage, "_readable", lambda c: readable)
+    return name
+
+
+def test_repair_commits_a_left_box_before_removing_it(a_box, fake_podman, monkeypatch):
+    from conftest import REAL_REPAIR
+
+    name = _leftover(monkeypatch, a_box)
+    fake_podman.containers[name] = {"running": False, "labels": {}, "env": {}}
+    notes = REAL_REPAIR()
+    assert fake_podman.commits and fake_podman.commits[0][-1] == paths.box_image(a_box.id)
+    assert name not in fake_podman.containers
+    assert notes == ["removed 1 container(s) an unclean stop left"]
+
+
+def test_repair_removes_a_box_whose_storage_is_gone(a_box, fake_podman, monkeypatch):
+    from conftest import REAL_REPAIR
+
+    name = _leftover(monkeypatch, a_box, readable=False)
+    fake_podman.containers[name] = {"running": False, "labels": {}, "env": {}}
+    real_run = fake_podman._run
+
+    def broken(args, **k):
+        if args[0] == "commit":
+            return subprocess.CompletedProcess(
+                args, 125, "", "extracting layer: no such file or directory"
+            )
+        return real_run(args, **k)
+
+    monkeypatch.setattr("kiwi_proxy.podman._run", broken)
+    notes = REAL_REPAIR()
+    assert name not in fake_podman.containers
+    assert any("storage was damaged" in n and "home is kept" in n for n in notes)
+
+
+def test_repair_leaves_a_box_it_could_not_keep_for_another_reason(a_box, fake_podman, monkeypatch):
+    from conftest import REAL_REPAIR
+
+    name = _leftover(monkeypatch, a_box, readable=True)
+    fake_podman.containers[name] = {"running": False, "labels": {}, "env": {}}
+    real_run = fake_podman._run
+
+    def full(args, **k):
+        if args[0] == "commit":
+            return subprocess.CompletedProcess(args, 125, "", "no space left on device")
+        return real_run(args, **k)
+
+    monkeypatch.setattr("kiwi_proxy.podman._run", full)
+    notes = REAL_REPAIR()
+    assert name in fake_podman.containers
+    assert notes and "left it in place" in notes[0]

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.1
+
+- **Repair on start:** the window removes kiwi-custodia's containers a crash or a
+  reset left. A box's is committed to its snapshot image first, so nothing
+  installed in it is lost; when its storage is gone (it can be neither started nor
+  committed) it is removed and the window says so; its home is kept. Any other
+  failure leaves it in place. `kiwi-custodia repair` by hand.
+- **Tidy up unused containers** no longer removes a stopped box's container
+  without committing it first.
+- **Check and repair** in the menu: podman's quick storage check, shared with
+  Kiwi Proxy and Kiwi Fox. Needs kiwi-proxy 0.8.2.
+
 ## 0.3.0
 
 **Boxes on your other devices.** Boxes go into kiwi-proxy's encrypted snapshot

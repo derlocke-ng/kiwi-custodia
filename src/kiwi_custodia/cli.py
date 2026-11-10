@@ -340,6 +340,15 @@ def cmd_set(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_repair(a: argparse.Namespace) -> int:
+    notes = boxes.repair()
+    for note in notes:
+        _p(note)
+    if not notes:
+        _p("nothing to repair")
+    return 0
+
+
 def cmd_rm(a: argparse.Namespace) -> int:
     try:
         box = _box(a.box)
@@ -608,6 +617,11 @@ def build_parser() -> argparse.ArgumentParser:
         "('-' reads it from stdin, '' removes it)",
     )
     p.set_defaults(fn=cmd_set)
+
+    p = sub.add_parser(
+        "repair", help="remove containers an unclean stop left; boxes are kept first"
+    )
+    p.set_defaults(fn=cmd_repair)
 
     p = sub.add_parser("rm", help="delete a box and its home")
     p.add_argument("box")

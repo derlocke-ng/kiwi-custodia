@@ -22,7 +22,9 @@ from kiwi_proxy import dns, exits, gateway, podman  # noqa: E402
 from kiwi_proxy import paths as proxy_paths  # noqa: E402
 from kiwi_proxy.models import Endpoint, Exit  # noqa: E402
 
-from kiwi_custodia import paths, session, store, tunnel  # noqa: E402
+from kiwi_custodia import boxes, paths, session, store, tunnel  # noqa: E402
+
+REAL_REPAIR = boxes.repair  # test_boxes tests the real one against the fake podman
 
 
 @pytest.fixture(autouse=True)
@@ -35,6 +37,12 @@ def _hermetic(tmp_path, monkeypatch):
     monkeypatch.delenv("DISPLAY", raising=False)
     proxy_paths.ensure_tree()
     paths.ensure_tree()
+    from kiwi_proxy import endpoint
+
+    if hasattr(endpoint, "reachable"):  # never a real connection to a test address
+        monkeypatch.setattr(endpoint, "reachable", lambda ep, timeout=None: None)
+    # nor this machine's podman repaired (the window does at start)
+    monkeypatch.setattr("kiwi_custodia.boxes.repair", lambda: [])
 
 
 def make_exit(name="work", dns_mode="resolver", module=None) -> Exit:

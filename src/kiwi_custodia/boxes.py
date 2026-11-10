@@ -499,9 +499,66 @@ def reset(box: Box) -> None:
     shutil.rmtree(paths.box_rebuild_dir(box.id), ignore_errors=True)
 
 
+def _keep_and_remove(box: Box | None, name: str) -> str | None:
+    """A box container that is not running: committed to the box's snapshot image
+    first, then removed. When its storage is gone (it cannot be committed, read
+    or started) it is removed anyway; any other failure leaves it in place. A
+    line when something was lost or left."""
+    if box is not None:
+        try:
+            snapshot(box)
+        except BoxError as exc:
+            readable = True
+            try:
+                from kiwi_proxy import storage
+
+                row = next((c for c in storage.containers() if c.name == name), None)
+                readable = row is None or storage._readable(row)
+            except ImportError:
+                pass
+            if readable:
+                return f"{box.name}: could not keep its container ({exc}); left it in place"
+            podman.rm(name)
+            return (
+                f"{box.name}: its container's storage was damaged and it was removed; its home "
+                "is kept, what was installed since its last stop is lost"
+            )
+    podman.rm(name)
+    return None
+
+
+def repair() -> list[str]:
+    """Repair on start: kiwi-custodia's containers a crash, a reset or an
+    unfinished stop left. A box is committed before its container goes. Lines
+    for what was done."""
+    if not podman.available():
+        return []
+    try:
+        from kiwi_proxy import storage
+    except ImportError:  # kiwi-proxy older than 0.8.2
+        return []
+    known = {b.id: b for b in store.list_boxes()}
+    notes = []
+    removed = 0
+    for c in storage.leftovers("kiwi-custodia"):
+        if c.labels.get(paths.ROLE_LABEL) == "box":
+            note = _keep_and_remove(known.get(c.labels.get(paths.BOX_LABEL, "")), c.name)
+            if note:
+                notes.append(note)
+                if "left it in place" in note:
+                    continue
+        else:
+            podman.rm(c.name)
+        removed += 1
+    if removed:
+        notes.insert(0, f"removed {removed} container(s) an unclean stop left")
+    return notes
+
+
 def reap() -> list[str]:
     """Containers of boxes that no longer exist, sidecars without a running box,
-    and then whatever kiwi-proxy finds unused."""
+    and then whatever kiwi-proxy finds unused. A stopped box is committed before
+    its container goes."""
     if not podman.available():
         return []
     cleaned: list[str] = []
@@ -511,7 +568,8 @@ def reap() -> list[str]:
         lab = row.get("Labels") or {}
         role = lab.get(paths.ROLE_LABEL)
         if role == "box" and (name not in known or row.get("State") != "running"):
-            podman.rm(name)
+            if _keep_and_remove(known.get(name), name) and podman.exists(name):
+                continue
             cleaned.append(name)
         elif role == "tunnel":
             exit_id = lab.get(paths.EXIT_LABEL, "")
