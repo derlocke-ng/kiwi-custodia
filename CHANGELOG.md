@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- A box's details on a VPN exit say "the VPN itself: TCP and UDP, no sidecar"
+  instead of naming a tun2socks sidecar that does not exist there.
+
 ## 0.4.0
 
 - **A box on a VPN exit uses the VPN directly: TCP and UDP.** With kiwi-proxy 0.11

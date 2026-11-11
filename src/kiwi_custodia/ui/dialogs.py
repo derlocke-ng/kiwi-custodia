@@ -10,7 +10,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 from kiwi_proxy import exits  # noqa: E402
 
-from .. import apps, boxes, distros, paths, store  # noqa: E402
+from .. import apps, boxes, distros, paths, store, tunnel  # noqa: E402
 from ..models import Box  # noqa: E402
 from . import worker  # noqa: E402
 from .help import APP, explain  # noqa: E402
@@ -447,7 +447,14 @@ class BoxDetails(Adw.Dialog):
                     toast=toast,
                 )
             )
-            group.add(_row("Tunnel", paths.tunnel_name(ex.id)))
+            group.add(
+                _row(
+                    "Tunnel",
+                    paths.tunnel_name(ex.id)
+                    if tunnel.needed(ex)
+                    else "the VPN itself: TCP and UDP, no sidecar",
+                )
+            )
             group.add(
                 _row(
                     "DNS",
