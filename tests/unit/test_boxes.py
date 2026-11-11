@@ -96,6 +96,19 @@ def test_up_brings_gateway_tunnel_and_box(a_box, an_exit, fake_podman):
     assert boxes.state(a_box) == "running"
 
 
+def test_on_a_vpn_exit_the_box_uses_the_tunnel_with_no_sidecar(
+    a_box, an_exit, fake_podman, monkeypatch
+):
+    # kiwi-proxy's tunnel exits route the namespace through the VPN themselves.
+    monkeypatch.setattr(gateway, "is_tunnel", lambda ex: ex.id == an_exit.id, raising=False)
+    up = boxes.up(a_box)
+    assert up.tunnel == ""
+    assert paths.tunnel_name(an_exit.id) not in fake_podman.containers
+    box = paths.box_name(a_box.id)
+    assert fake_podman.containers[box]["network"] == f"container:{up.gateway}"
+    assert boxes.state(a_box) == "running"
+
+
 def test_up_is_idempotent(a_box, fake_podman):
     boxes.up(a_box)
     again = boxes.up(a_box)

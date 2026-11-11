@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- **A box on a VPN exit uses the VPN directly: TCP and UDP.** With kiwi-proxy 0.11
+  and kiwi-plugin-vpn 0.3, a VPN exit's namespace routes through its tunnel, so a
+  box there needs no tun2socks sidecar: games, calls, DNS tools and anything else
+  that speaks UDP work, and nothing leaves when the tunnel is down. Other exits
+  are as before (TCP through the sidecar).
+
 ## 0.3.2
 
 - **Preferences → General:** repair on start (on), what a new box starts with

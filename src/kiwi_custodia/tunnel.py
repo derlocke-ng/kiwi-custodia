@@ -11,6 +11,9 @@ nftables rule it adds.
 It is a member of the gateway like any other: `gateway.release` counts it, so a
 box being stopped has to take it down first (boxes.stop does) or the gateway
 would stay up for it.
+
+A VPN exit needs none: its namespace's route is the tunnel already (kiwi-proxy's
+tunnel exits), so a box there sends TCP and UDP straight through the VPN.
 """
 
 from __future__ import annotations
@@ -42,6 +45,13 @@ class Tunnel:
     name: str
     resolver: str  # what a box puts in /etc/resolv.conf
     reused: bool = False
+
+
+def needed(ex: Exit) -> bool:
+    """Does a box on this exit need the sidecar? Not on a VPN exit, whose route is
+    the tunnel (kiwi-proxy 0.11 and later say which exits those are)."""
+    is_tunnel = getattr(gateway, "is_tunnel", None)
+    return not (is_tunnel and is_tunnel(ex))
 
 
 def resolver_for(ex: Exit) -> str:
@@ -83,6 +93,13 @@ def spec(ex: Exit, gw_name: str, endpoint_ip: str | None = None) -> ContainerSpe
 
 
 def is_up(exit_id: str) -> bool:
+    from kiwi_proxy import exits
+
+    try:
+        if not needed(exits.load(exit_id)):
+            return True  # a VPN exit: nothing to be up besides its gateway
+    except exits.ExitError:
+        pass
     return podman.is_running(paths.tunnel_name(exit_id))
 
 
@@ -98,7 +115,10 @@ def wait_ready(name: str, timeout: float = 20.0) -> bool:
 
 
 def up(ex: Exit, gw: gateway.Gateway) -> Tunnel:
-    """Bring the exit's sidecar up in its gateway, or hand back the running one."""
+    """Bring the exit's sidecar up in its gateway, or hand back the running one.
+    On a VPN exit there is none to bring up (name "")."""
+    if not needed(ex):
+        return Tunnel(ex.id, "", resolver_for(ex))
     name = paths.tunnel_name(ex.id)
     if podman.is_running(name):
         return Tunnel(ex.id, name, resolver_for(ex), reused=True)
