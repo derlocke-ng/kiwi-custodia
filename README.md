@@ -38,8 +38,8 @@ Distro images are pulled when a box is first started, not at install time.
 ## Use
 
 ```
-kiwi-proxy add mullvad-se --module vpn --lease Sweden    # an exit, defined once, in kiwi-proxy
-kiwi-custodia new work --exit mullvad-se --distro fedora  # a box on it; its first start installs the baseline
+kiwi-proxy add home --module vpn --config ~/wg0.conf     # an exit, defined once, in kiwi-proxy
+kiwi-custodia new work --exit home --distro fedora        # a box on it; its first start installs the baseline
 kiwi-custodia enter work                                  # a shell in it: sudo dnf install steam
 kiwi-custodia run work -- firefox                         # one command in it
 kiwi-custodia check work                                  # what the world sees from inside — through the TUN
@@ -100,8 +100,12 @@ Two boxes on one exit share its gateway and its sidecar — one namespace, one
 exit IP, one set of Tor circuits. Boxes that must not share an exit take
 different exits. A kiwi-fox profile and a box on the same exit share it too.
 
-UDP has no way out of a gateway (no QUIC, no WebRTC media), and that holds in
-a box: an app's UDP is dropped, and the sane ones fall back to TCP.
+On a SOCKS5 exit (Tor, a proxy, 9proxy) UDP has no way out of the gateway, and
+that holds in a box: an app's UDP is dropped, and the sane ones fall back to TCP.
+**On a VPN exit a box gets UDP too:** the exit's namespace is the VPN's own
+(kiwi-proxy 0.11, kiwi-plugin-vpn), so the box needs no sidecar and sends TCP and
+UDP straight through the tunnel — games, calls, DNS tools — and nothing leaves
+when the tunnel is down.
 
 ## A box on your other devices
 
