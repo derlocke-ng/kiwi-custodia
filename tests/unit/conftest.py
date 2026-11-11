@@ -43,6 +43,10 @@ def _hermetic(tmp_path, monkeypatch):
         monkeypatch.setattr(endpoint, "reachable", lambda ep, timeout=None: None)
     # nor this machine's podman repaired (the window does at start)
     monkeypatch.setattr("kiwi_custodia.boxes.repair", lambda: [])
+    from kiwi_proxy import gateway as _gw
+
+    if hasattr(_gw, "_ensure_current_gateway_image"):  # never a real image build
+        monkeypatch.setattr(_gw, "_ensure_current_gateway_image", lambda: None)
 
 
 def make_exit(name="work", dns_mode="resolver", module=None) -> Exit:
