@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.2
+
+- **Preferences → General:** repair on start (on), what a new box starts with
+  (distribution, and an exit or "Ask every time"), and the window size with a Reset.
+  Preferences is in the menu even without a snapshot folder.
+- **Short texts, the rest behind a (?)** that opens the explanation and a link to
+  kiwi-network.eu (shared with Kiwi Proxy 0.8.3).
+- The list of boxes up to 920 px wide.
+
 ## 0.3.1
 
 - **Repair on start:** the window removes kiwi-custodia's containers a crash or a

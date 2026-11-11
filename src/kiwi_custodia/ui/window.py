@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 
 import gi
@@ -18,6 +19,7 @@ from ..cli import describe  # noqa: E402
 from ..models import Box  # noqa: E402
 from . import worker  # noqa: E402
 from .dialogs import AppsDialog, BoxDetails, BoxEditor, LogsDialog  # noqa: E402
+from .help import APP, explain, widen  # noqa: E402
 
 REFRESH_SECONDS = 4
 # How often the snapshot folder is looked at (in window ticks).
@@ -93,8 +95,8 @@ class Window(Adw.ApplicationWindow):
         header.pack_start(new_button)
 
         menu = Gio.Menu()
+        menu.append("Preferences", "win.preferences")
         if snapshot_ui is not None:
-            menu.append("Preferences", "win.preferences")
             menu.append("Snapshot everything now", "win.snapshot-all")
         menu.append("Set up environment", "win.setup")
         menu.append("Check environment", "win.doctor")
@@ -121,11 +123,14 @@ class Window(Adw.ApplicationWindow):
             )
 
         self.page = Adw.PreferencesPage()
-        self.group = Adw.PreferencesGroup(
-            title="Boxes",
-            description="Each box is a distribution with a home of its own, joined to one "
-            "kiwi-proxy exit. Everything in it — packages, updates, its apps on this "
-            "desktop — leaves through that exit and nothing else.",
+        widen(self.page)
+        self.group = Adw.PreferencesGroup(title="Boxes")
+        explain(
+            self.group,
+            "Each box is a distribution with a home of its own, joined to one kiwi-proxy "
+            "exit. Everything in it (packages, updates, its apps on this desktop) leaves "
+            "through that exit and nothing else.",
+            app=APP,
         )
         self.page.add(self.group)
         self.away_group = Adw.PreferencesGroup(
@@ -136,8 +141,7 @@ class Window(Adw.ApplicationWindow):
         self.empty = Adw.StatusPage(
             icon_name="package-x-generic-symbolic",
             title="No boxes yet",
-            description="A box is Fedora, Ubuntu, Debian, Arch, openSUSE or Alpine in a "
-            "container whose only route is an exit from Kiwi Proxy. Install anything in it.",
+            description="A distribution whose only route is an exit",
         )
         create = Gtk.Button(label="New box", halign=Gtk.Align.CENTER)
         create.add_css_class("suggested-action")
@@ -723,6 +727,11 @@ class Window(Adw.ApplicationWindow):
         )
 
     def _repair_on_start(self) -> None:
+        from .. import settings
+
+        if not settings.load().repair_on_start:
+            return
+
         def done(notes) -> None:
             for note in notes[:3]:
                 self._toast(note[0].upper() + note[1:])
@@ -751,16 +760,101 @@ class Window(Adw.ApplicationWindow):
         self._relations = {}
         self.refresh()
 
+    def _general_page(self) -> Adw.PreferencesPage:
+        from .. import settings
+
+        s = settings.load()
+        page = Adw.PreferencesPage(title="General", icon_name="preferences-system-symbolic")
+
+        boxes_group = Adw.PreferencesGroup(title="Boxes")
+        repair = Adw.SwitchRow(title="Repair on start", active=s.repair_on_start)
+        explain(
+            repair,
+            "Before anything starts, remove this app's containers an unclean shutdown left. "
+            "A box's is committed first, so nothing installed in it is lost.",
+            app=APP,
+        )
+
+        def on_repair(row, _param) -> None:
+            cur = settings.load()
+            cur.repair_on_start = row.get_active()
+            settings.save(cur)
+
+        repair.connect("notify::active", on_repair)
+        boxes_group.add(repair)
+        page.add(boxes_group)
+
+        new = Adw.PreferencesGroup(title="New boxes")
+        keys = list(distros.DISTROS)
+        distro = Adw.ComboRow(
+            title="Distribution",
+            model=Gtk.StringList.new([distros.DISTROS[k].title for k in keys]),
+        )
+        distro.set_selected(keys.index(s.new_distro) if s.new_distro in keys else 0)
+
+        def on_distro(row, _param) -> None:
+            cur = settings.load()
+            cur.new_distro = keys[row.get_selected()]
+            settings.save(cur)
+
+        distro.connect("notify::selected", on_distro)
+        new.add(distro)
+        from kiwi_proxy import exits
+
+        found = sorted(exits.list_exits(), key=lambda e: e.name)
+        choices = [("", "Ask every time")] + [(e.id, e.name) for e in found]
+        exit_keys = [k for k, _l in choices]
+        exit_row = Adw.ComboRow(
+            title="Exit", model=Gtk.StringList.new([label for _k, label in choices])
+        )
+        exit_row.set_selected(exit_keys.index(s.new_exit) if s.new_exit in exit_keys else 0)
+
+        def on_exit(row, _param) -> None:
+            cur = settings.load()
+            cur.new_exit = exit_keys[row.get_selected()]
+            settings.save(cur)
+
+        exit_row.connect("notify::selected", on_exit)
+        new.add(exit_row)
+        page.add(new)
+
+        window = Adw.PreferencesGroup(title="Window")
+        size = Adw.ActionRow(title="Size")
+
+        def show() -> None:
+            w, h, maxed = saved_geometry()
+            size.set_subtitle("maximized" if maxed else f"{w} × {h}, kept when you close it")
+
+        reset = Gtk.Button(label="Reset", valign=Gtk.Align.CENTER)
+
+        def on_reset(*_a) -> None:
+            with contextlib.suppress(OSError):
+                (paths.config_dir() / "window.json").unlink()
+            self.unmaximize()
+            self.set_default_size(*DEFAULT_SIZE)
+            show()
+
+        reset.connect("clicked", on_reset)
+        size.add_suffix(reset)
+        show()
+        window.add(size)
+        page.add(window)
+        return page
+
     def _open_preferences(self) -> None:
+        general = self._general_page()
         if snapshot_ui is None:
+            dialog = Adw.PreferencesDialog(title="Preferences")
+            dialog.add(general)
+            dialog.present(self)
             return
         page = snapshot_ui.SnapshotsPage(
-            "when a box stops after it ran",
+            "after a box ran",
             on_changed=self._snapshots_changed,
             take_all=box_snapshots.take_all,
-            take_all_text="every box: its home, and the packages and files added to it",
+            take_all_text="every box",
         )
-        snapshot_ui.preferences_dialog(page).present(self)
+        snapshot_ui.preferences_dialog(general, page).present(self)
 
     def _snapshot_all(self) -> None:
         if snap is None:

@@ -13,6 +13,7 @@ from kiwi_proxy import exits  # noqa: E402
 from .. import apps, boxes, distros, paths, store  # noqa: E402
 from ..models import Box  # noqa: E402
 from . import worker  # noqa: E402
+from .help import APP, explain  # noqa: E402
 
 PROXY_APP_ID = "eu.kiwinetwork.KiwiProxy"
 
@@ -77,8 +78,12 @@ class ExitPicker:
         group.add(self.row)
         self.proxy_row = Adw.ActionRow(
             title="Exits are defined in Kiwi Proxy",
-            subtitle="A SOCKS5 you were given, or a provider module — Tor, a VPN, 9proxy, "
-            "Mysterium. Add or change one there; this list follows.",
+            subtitle="Add or change one there; this list follows",
+        )
+        explain(
+            self.proxy_row,
+            "A SOCKS5 you were given, or a provider module: Tor, a VPN, 9proxy, Mysterium.",
+            app="kiwi-proxy",
         )
         self.proxy_row.set_subtitle_lines(0)
         open_button = Gtk.Button(label="Open Kiwi Proxy", valign=Gtk.Align.CENTER)
@@ -148,7 +153,10 @@ class BoxEditor(Adw.Dialog):
         keys = list(distros.DISTROS)
         self.distro_row = Adw.ComboRow(title="Distribution")
         self.distro_row.set_model(Gtk.StringList.new([distros.DISTROS[k].title for k in keys]))
-        self.distro_row.set_selected(keys.index(box.distro if box else distros.DEFAULT))
+        from .. import settings
+
+        prefer = settings.load()
+        self.distro_row.set_selected(keys.index(box.distro if box else prefer.new_distro))
         self.distro_row.set_sensitive(box is None)
         self.distro_row.set_subtitle(
             "" if box is None else "Fixed once the box exists; make a new box for another"
@@ -170,18 +178,23 @@ class BoxEditor(Adw.Dialog):
         group.add(self.hostname_row)
         page.add(group)
 
-        group = Adw.PreferencesGroup(
-            title="Network",
-            description="The box has no route but this exit. Packages, updates, apps: "
-            "everything leaves through it, nothing can go around it.",
+        group = Adw.PreferencesGroup(title="Network", description="Its only route")
+        explain(
+            group,
+            "The box has no route but this exit. Packages, updates, apps: everything leaves "
+            "through it, nothing can go around it.",
+            app=APP,
         )
-        self.exit_picker = ExitPicker(group, box.exit if box else None)
+        self.exit_picker = ExitPicker(group, box.exit if box else (prefer.new_exit or None))
         page.add(group)
 
-        group = Adw.PreferencesGroup(
-            title="Desktop",
-            description="The box's apps open on this desktop: it gets the display, sound and "
-            "the session bus. That is network custody, not a sandbox from the desktop.",
+        group = Adw.PreferencesGroup(title="Desktop", description="Its apps open here")
+        explain(
+            group,
+            "The box gets the display, sound and the session bus, so its apps open on this "
+            "desktop. That is network custody, not a sandbox from the desktop.",
+            app=APP,
+            anchor="what-it-is-not",
         )
         self.gpu_row = Adw.SwitchRow(
             title="Hardware rendering",
@@ -211,10 +224,15 @@ class BoxEditor(Adw.Dialog):
             self._add_travels(page, box)
 
         group = Adw.PreferencesGroup(
-            title="Extra setup script",
-            description="Optional. Runs once as root after the packages, whenever the box is "
-            "built: at its first start here, and on another device when it is rebuilt from a "
-            "snapshot. For anything the lists above cannot express.",
+            title="Extra setup script", description="Optional, runs once as root"
+        )
+        explain(
+            group,
+            "Runs after the packages whenever the box is built: at its first start here, "
+            "and on another device when it is rebuilt from a snapshot. For anything the "
+            "lists above cannot express.",
+            app=APP,
+            anchor="how-a-box-is-built",
         )
         self.script_view = Gtk.TextView(
             monospace=True,
@@ -244,7 +262,14 @@ class BoxEditor(Adw.Dialog):
         """What the box's snapshots carry to another device (mock-up 14)."""
         self.travels_group = Adw.PreferencesGroup(
             title="What travels to another device",
-            description="Recorded by itself at every snapshot.",
+            description="Recorded at every snapshot",
+        )
+        self._travels_help = explain(
+            self.travels_group,
+            "On another device the box is rebuilt from its base image with these, then its "
+            "home is put back. The image itself stays on this device.",
+            app=APP,
+            anchor="how-a-box-is-built",
         )
 
         def tag() -> Gtk.Label:
@@ -283,27 +308,18 @@ class BoxEditor(Adw.Dialog):
 
         pkg_tag, files_tag, home_tag = self.travel_tags
         home_tag.set_label(size(t.home_size))
-        rebuilt = "On another device the box is rebuilt from the base image with these, "
-        rebuilt += "then its home is put back."
-        if t.image_size:
-            rebuilt += f" The {size(t.image_size)} image stays here."
+        stays = f" · the {size(t.image_size)} image stays here" if t.image_size else ""
         if t.state == "off":
-            text = (
-                "Set up a snapshot folder in Preferences and every snapshot records these by "
-                "itself. " + rebuilt
-            )
+            text = "Set up a snapshot folder in Preferences"
             waiting = "recorded at the first snapshot"
         elif t.state == "locked":
-            text = "Snapshots are locked on this device: unlock them to see what was recorded."
+            text = "Snapshots are locked on this device"
             waiting = "unlock snapshots to see it"
         elif t.state == "none":
-            text = (
-                "Recorded by itself at every snapshot; the first is taken when the box stops "
-                "after it ran. " + rebuilt
-            )
+            text = "Recorded at every snapshot · none yet" + stays
             waiting = "recorded at the first snapshot"
         else:
-            text = f"Recorded by itself at every snapshot, the last {t.when}. " + rebuilt
+            text = f"Recorded at every snapshot · last {t.when}" + stays
             waiting = ""
         self.travels_group.set_description(text)
         if waiting:
@@ -474,10 +490,12 @@ class AppsDialog(Adw.Dialog):
         refresh = Gtk.Button(icon_name="view-refresh-symbolic", tooltip_text="Read again")
         refresh.connect("clicked", lambda *_: self.reload())
         header.pack_end(refresh)
-        self.group = Adw.PreferencesGroup(
-            title="Installed applications",
-            description="What the box's packages put in its app directories. Open one here, "
-            "or put it in this desktop's app grid; it runs in the box, through the exit.",
+        self.group = Adw.PreferencesGroup(title="Installed applications")
+        explain(
+            self.group,
+            "What the box's packages put in its app directories. Open one here, or put it "
+            "in this desktop's app grid; it runs in the box, through the exit.",
+            app=APP,
         )
         page = Adw.PreferencesPage()
         page.add(self.group)
@@ -504,9 +522,7 @@ class AppsDialog(Adw.Dialog):
             self._box = box
             if not found:
                 self.status.set_title("No desktop applications yet")
-                self.status.set_description(
-                    "Install some in the box with its package manager; they show up here."
-                )
+                self.status.set_description("Install some with the box's package manager")
                 return
             for app in found:
                 row = Adw.ActionRow(
