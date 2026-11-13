@@ -32,6 +32,9 @@ class Box(Strict):
     gpu: bool = True  # pass /dev/dri in, for hardware rendering
     shell: str | None = None  # the user's login shell in the box; bash when None and present
     desktop_entry: bool = False  # a terminal entry for the box in the app grid
+    # The colour of the box's Custodia icon: a kiwi-icons colourway (ocean, ...),
+    # "" for Kiwi Custodia's own. A new box gets one no other box has.
+    color: str = ""
     exported: list[str] = Field(default_factory=list)  # desktop file ids exported to the host
     # Runs once as root when the box is rebuilt on another device, after its
     # packages and files: for what a package list cannot say.

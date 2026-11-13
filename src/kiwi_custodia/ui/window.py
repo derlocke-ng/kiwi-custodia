@@ -268,6 +268,10 @@ class Window(Adw.ApplicationWindow):
         row.connect("activated", lambda *_: self._open_details(box.id))
         state = Gtk.Image(icon_name="package-x-generic-symbolic")
         row.add_prefix(state)
+        # Its Custodia kiwi in its own colour, leftmost: boxes told apart at a glance.
+        mark = Gtk.Image(pixel_size=32)
+        row.add_prefix(mark)
+        row.color_mark = mark  # type: ignore[attr-defined]
         row.state_icon = state  # type: ignore[attr-defined]
 
         term = Gtk.Button(
@@ -304,6 +308,13 @@ class Window(Adw.ApplicationWindow):
     def _update_row(self, row: Adw.ActionRow, box: Box) -> None:
         st = self._state.get(box.id, "stopped")
         row.set_title(box.name)
+        from .. import APP_ID, icons
+
+        colored = icons.colored_icon(box)
+        if colored:
+            row.color_mark.set_from_file(str(colored))  # type: ignore[attr-defined]
+        else:
+            row.color_mark.set_from_icon_name(APP_ID)  # type: ignore[attr-defined]
         subtitle = describe(box)
         silent = st == "running" and box.id in self._silent
         if silent:

@@ -31,6 +31,12 @@ def _exec_arg(value: str) -> str:
     return value
 
 
+def _icon(box: Box) -> str:
+    from .icons import icon_for
+
+    return icon_for(box)
+
+
 def render_entry(box: Box, describe: str) -> str:
     """A terminal into the box, from the app grid; GNOME opens it in the
     default terminal because the entry says Terminal=true."""
@@ -42,7 +48,7 @@ def render_entry(box: Box, describe: str) -> str:
         "GenericName=Kiwi Custodia box",
         f"Comment={describe} — a terminal in the box",
         f"Exec={cmd} enter {box.id}",
-        f"Icon={APP_ID}",
+        f"Icon={_icon(box)}",
         "Terminal=true",
         "Categories=System;TerminalEmulator;",
         f"Keywords=kiwi;custodia;box;{box.distro};{box.name};",

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0
+
+- **Each box has a colour.** Its Kiwi Custodia icon, in the list and in its
+  app-grid entry (the terminal into the box), comes in a colour of its own from
+  the kiwi-icons kit, so two boxes no longer look alike in GNOME. A new box gets
+  a colour no other box has, far apart from the ones before; the box's dialog
+  has a Colour row to change it. Boxes made before keep Kiwi Custodia's own
+  colours until you pick one. Exported apps keep their own icons.
+
 ## 0.5.0
 
 - **Preferences behind a gear, a slim menu.** The gear beside the menu opens

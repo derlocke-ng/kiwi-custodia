@@ -208,6 +208,21 @@ class BoxEditor(Adw.Dialog):
             active=box.desktop_entry if box else False,
         )
         group.add(self.entry_row)
+        from .. import icons
+
+        # A new box is given the next free colour when it is made; "" here keeps that.
+        self._colors = ["", *icons.COLORS]
+        self.color_row = Adw.ComboRow(
+            title="Colour",
+            subtitle="its icon, in the list and the app grid",
+            model=Gtk.StringList.new(
+                [("A colour of its own" if box is None else icons.color_label(""))]
+                + [icons.color_label(c) for c in icons.COLORS]
+            ),
+        )
+        current = box.color if box else ""
+        self.color_row.set_selected(self._colors.index(current) if current in self._colors else 0)
+        group.add(self.color_row)
         self.packages_row = Adw.EntryRow(
             title="Extra packages, space-separated",
             text=" ".join(box.packages) if box else "",
@@ -397,6 +412,9 @@ class BoxEditor(Adw.Dialog):
                 box.shell = shell
             box.desktop_entry = entry
             box.setup_script = script
+            picked = self._colors[self.color_row.get_selected()]
+            if picked or self._box is not None:
+                box.color = picked
             store.save(box)
             desktop.sync_entry(box, describe(box))
             from .. import snapshots as box_snapshots

@@ -55,3 +55,23 @@ def test_rename(a_box, an_exit):
     store.rename(a_box, "renamed")
     assert store.load(a_box.id).name == "renamed"
     assert store.boxes_on(an_exit.id) == sorted([a_box, other], key=lambda b: b.name)
+
+
+def test_each_new_box_gets_a_colour_and_its_entry_shows_it(monkeypatch):
+    from conftest import make_exit
+    from kiwi_proxy import exits
+
+    from kiwi_custodia import APP_ID, desktop, icons, store
+
+    ex = make_exit("colours")
+    monkeypatch.setattr(exits, "exists", lambda ref: True)
+    a = store.create("one", distro="debian", exit_id=ex.id)
+    b = store.create("two", distro="debian", exit_id=ex.id)
+    assert a.color and b.color and a.color != b.color
+    svg = icons.colored_icon(a).read_text()
+    assert svg.startswith("<svg") and "M64 52.5l10.5 5.5" in svg  # Custodia's cube, coloured
+    assert f"Icon={icons.colored_icon(a)}\n" in desktop.render_entry(a, "a box")
+    a.color = ""
+    assert f"Icon={APP_ID}\n" in desktop.render_entry(a, "a box")
+    store.save(a)
+    assert '"color"' not in (store.paths.box_dir(a.id) / store.RECORD).read_text()

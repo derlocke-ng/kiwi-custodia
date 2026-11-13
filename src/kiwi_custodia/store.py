@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 import re
 import shutil
@@ -74,6 +75,9 @@ def create(
         gpu=gpu,
         shell=shell or None,
     )
+    from .icons import next_color
+
+    box.color = next_color(b.color for b in list_boxes())
     paths.box_home(box.id).mkdir(parents=True, exist_ok=True)
     save(box)
     return box
@@ -82,7 +86,10 @@ def create(
 def save(box: Box) -> None:
     d = paths.box_dir(box.id)
     d.mkdir(parents=True, exist_ok=True)
-    _write_json(d / RECORD, box.model_dump_json(indent=2))
+    data = box.model_dump(mode="json")
+    if not data.get("color"):
+        data.pop("color", None)  # so an older Kiwi Custodia still reads the box
+    _write_json(d / RECORD, json.dumps(data, indent=2))
 
 
 def load(box_id: str) -> Box:
