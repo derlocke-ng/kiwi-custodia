@@ -79,6 +79,7 @@ class Window(Adw.ApplicationWindow):
         self._rows: dict[str, Adw.ActionRow] = {}
         self._busy: set[str] = set()
         self._state: dict[str, str] = {}  # box id -> running | stopped | gateway-down
+        self._silent: set[str] = set()  # running boxes whose VPN is not answering
         self._polling = False
         self._relations: dict[str, object] = {}
         self._in_use: dict[str, list] = {}
@@ -242,13 +243,20 @@ class Window(Adw.ApplicationWindow):
 
         def work():
             if not podman.available():
-                return {}
-            return {b.id: boxes.state(b) for b in store.list_boxes()}
+                return {}, set()
+            found = {b.id: boxes.state(b) for b in store.list_boxes()}
+            silent = {
+                b.id
+                for b in store.list_boxes()
+                if found.get(b.id) == "running" and boxes.vpn_silent(b)
+            }
+            return found, silent
 
-        def done(state) -> None:
+        def done(result) -> None:
             self._polling = False
-            if state != self._state:
-                self._state = state
+            state, silent = result
+            if state != self._state or silent != self._silent:
+                self._state, self._silent = state, silent
                 for box in store.list_boxes():
                     if row := self._rows.get(box.id):
                         self._update_row(row, box)
@@ -300,6 +308,9 @@ class Window(Adw.ApplicationWindow):
         st = self._state.get(box.id, "stopped")
         row.set_title(box.name)
         subtitle = describe(box)
+        silent = st == "running" and box.id in self._silent
+        if silent:
+            subtitle += " · VPN not answering"
         if note := self._snapshot_note(box):
             subtitle += f"\n{note}"
         row.set_subtitle(subtitle)
@@ -307,7 +318,13 @@ class Window(Adw.ApplicationWindow):
         icon = row.state_icon  # type: ignore[attr-defined]
         for css in ("success", "warning", "dim-label"):
             icon.remove_css_class(css)
-        if st == "running":
+        if silent:
+            icon.add_css_class("warning")
+            icon.set_tooltip_text(
+                "running; its VPN server is not answering. The tunnel comes back by "
+                "itself once it does, and nothing leaves meanwhile"
+            )
+        elif st == "running":
             icon.add_css_class("success")
             icon.set_tooltip_text("running, through its exit")
         elif st == "gateway-down":

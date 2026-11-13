@@ -384,3 +384,18 @@ def test_repair_leaves_a_box_it_could_not_keep_for_another_reason(a_box, fake_po
     notes = REAL_REPAIR()
     assert name in fake_podman.containers
     assert notes and "left it in place" in notes[0]
+
+
+def test_a_box_whose_vpn_is_not_answering_is_told_by_kiwi_proxy(monkeypatch):
+    from kiwi_proxy import exits
+
+    ex = make_exit("vpnx")
+    box = store.create("onvpn", distro="debian", exit_id=ex.id)
+    monkeypatch.setattr(exits, "load", lambda ref: ex if ref == ex.id else None)
+    answers = {"passes": False}
+    monkeypatch.setattr(gateway, "tunnel_passes", lambda e: answers["passes"], raising=False)
+    assert boxes.vpn_silent(box) is True
+    answers["passes"] = None  # not a tunnel exit, or not up
+    assert boxes.vpn_silent(box) is False
+    monkeypatch.setattr(exits, "load", lambda ref: (_ for _ in ()).throw(exits.ExitError("gone")))
+    assert boxes.vpn_silent(box) is False  # never raises in a window's poll

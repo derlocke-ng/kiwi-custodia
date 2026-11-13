@@ -432,6 +432,21 @@ def state(box: Box) -> BoxState:
     return "stopped"
 
 
+def vpn_silent(box: Box) -> bool:
+    """A box on a VPN exit whose server is not answering right now: kiwi-proxy
+    (0.18+) asks the tunnel itself, and the tunnel reconnects by itself once the
+    server answers again. False when that cannot be told."""
+    passes = getattr(gateway, "tunnel_passes", None)
+    if passes is None or not box.exit:
+        return False
+    try:
+        from kiwi_proxy import exits
+
+        return passes(exits.load(box.exit)) is False
+    except Exception:  # noqa: BLE001 - a window's poll, not a command
+        return False
+
+
 def exec_(box: Box, command: list[str], *, timeout: int = 60) -> subprocess.CompletedProcess:
     """A command in the running box, as the user, captured."""
     args = exec_args(box, command, tty=False)

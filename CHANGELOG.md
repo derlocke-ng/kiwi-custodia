@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.2
+
+- A running box on a VPN exit says "VPN not answering" (and its icon turns to a
+  warning) while the VPN server does not answer; Kiwi Proxy 0.18 asks the tunnel
+  itself. The tunnel reconnects by itself once the server answers again, the box
+  keeps its place, and nothing leaves meanwhile.
+
 ## 0.4.1
 
 - A box's details on a VPN exit say "the VPN itself: TCP and UDP, no sidecar"
