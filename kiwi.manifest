@@ -1,7 +1,7 @@
 # kiwi.manifest — app metadata for kiwi-updater
 NAME=kiwi-custodia
 DESCRIPTION=Distro containers whose every byte leaves through a kiwi-proxy exit — install anything, run it on your desktop, through the tunnel
-VERSION=0.4.2
+VERSION=0.4.3
 AUTHOR=derlocke-ng
 HOMEPAGE=https://github.com/derlocke-ng/kiwi-custodia
 LICENSE=GPL-3.0-or-later

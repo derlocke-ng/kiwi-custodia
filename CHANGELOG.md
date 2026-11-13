@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.3
+
+- The background worker's callbacks run once, whatever they return (GLib
+  repeats an idle callback that returns something true; Kiwi Fox's engines page
+  looped on it after an install).
+
 ## 0.4.2
 
 - A running box on a VPN exit says "VPN not answering" (and its icon turns to a
