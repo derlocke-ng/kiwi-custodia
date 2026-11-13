@@ -18,7 +18,7 @@ know distrobox, this is the same idea, with the network kept in custody.
 
 kiwi-custodia is part of the Kiwi desktop, next to kiwi-proxy and kiwi-fox.
 
-- Latest release: **v0.6.0**, in the
+- Latest release: **v0.6.1**, in the
   [Kiwi catalog](https://kiwi-network.eu/docs/desktop/catalogs/) (user scope,
   no root needed)
 - Runs on: Linux with rootless Podman, Python 3.12 or newer and kiwi-proxy.

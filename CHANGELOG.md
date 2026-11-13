@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1
+
+- **The documentation follows the kiwi-docs guide**, so kiwi-network.eu can show
+  it: a short README, and pages in `docs/` for installing, using, boxes, exits,
+  exported apps, snapshots, the architecture and development. No change to the
+  app.
+
 ## 0.6.0
 
 - **Each box has a colour.** Its Kiwi Custodia icon, in the list and in its
