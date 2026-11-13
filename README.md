@@ -139,7 +139,7 @@ kiwi-custodia set work --setup-script setup.sh         # for anything a list can
 ```
 
 - **When:** after a box ran and stopped, after you change it, and whenever you
-  ask (Snapshots… in its menu, or "Snapshot everything now"). A running box is
+  ask (Snapshots… in its menu, or Preferences → Snapshots). A running box is
   committed to its image first, so the recording reads a consistent system.
 - **The setup script** (the editor's "Extra setup script") runs once as root
   after the packages whenever the box is built: at its first start here, and on

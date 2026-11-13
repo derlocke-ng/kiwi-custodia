@@ -95,18 +95,15 @@ class Window(Adw.ApplicationWindow):
         new_button.connect("clicked", self._on_new)
         header.pack_start(new_button)
 
+        # The menu keeps what acts on the boxes now; snapshots and setting up,
+        # checking, repairing and tidying are in Preferences, behind the gear.
         menu = Gio.Menu()
-        menu.append("Preferences", "win.preferences")
-        if snapshot_ui is not None:
-            menu.append("Snapshot everything now", "win.snapshot-all")
-        menu.append("Set up environment", "win.setup")
-        menu.append("Check environment", "win.doctor")
-        if storage_ui is not None:
-            menu.append("Check and repair", "win.storage")
-        menu.append("Tidy up unused containers", "win.reap")
         menu.append("Stop every box", "win.stop-all")
         menu.append("About Kiwi Custodia", "app.about")
         header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu))
+        prefs_button = Gtk.Button(icon_name="emblem-system-symbolic", tooltip_text="Preferences")
+        prefs_button.connect("clicked", lambda *_: self._open_preferences())
+        header.pack_end(prefs_button)
 
         self.refresh_button = Gtk.Button(icon_name="view-refresh-symbolic", tooltip_text="Refresh")
         self.refresh_button.connect("clicked", lambda *_: self.refresh())
@@ -859,10 +856,21 @@ class Window(Adw.ApplicationWindow):
         return page
 
     def _open_preferences(self) -> None:
+        from .maintenance import MaintenancePage
+
         general = self._general_page()
+        jobs = [
+            ("Set up environment", "images and DNS data", "Set up", "win.setup"),
+            ("Check environment", "what is missing", "Check", "win.doctor"),
+        ]
+        if storage_ui is not None:
+            jobs.append(("Check and repair", "Podman's storage, leftovers", "Open…", "win.storage"))
+        jobs.append(("Tidy up", "containers nobody uses", "Tidy up", "win.reap"))
+        upkeep = MaintenancePage(self, jobs)
         if snapshot_ui is None:
             dialog = Adw.PreferencesDialog(title="Preferences")
             dialog.add(general)
+            dialog.add(upkeep)
             dialog.present(self)
             return
         page = snapshot_ui.SnapshotsPage(
@@ -871,7 +879,7 @@ class Window(Adw.ApplicationWindow):
             take_all=box_snapshots.take_all,
             take_all_text="every box",
         )
-        snapshot_ui.preferences_dialog(general, page).present(self)
+        snapshot_ui.preferences_dialog(general, page, upkeep).present(self)
 
     def _snapshot_all(self) -> None:
         if snap is None:

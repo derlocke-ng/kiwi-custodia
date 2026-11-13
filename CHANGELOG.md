@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+
+- **Preferences behind a gear, a slim menu.** The gear beside the menu opens
+  Preferences; the menu keeps **Stop every box** and **About**. "Snapshot
+  everything now" is on the Snapshots page; Set up environment, Check
+  environment, Check and repair and Tidy up are on a new **Maintenance** page.
+
 ## 0.4.3
 
 - The background worker's callbacks run once, whatever they return (GLib
