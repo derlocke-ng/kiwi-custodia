@@ -5,6 +5,7 @@ Custodia glyph; the cube from Custodia's own icon is registered with it here."""
 
 from __future__ import annotations
 
+import shutil
 from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
@@ -88,7 +89,45 @@ def colored_icon(box: Box) -> Path | None:
     return f
 
 
+def custom_dir() -> Path:
+    """Your own icons: PNG or SVG files put here are offered for every box."""
+    return paths.config_dir() / "icons"
+
+
+def choices() -> list[tuple[str, str]]:
+    """(key, title): the Custodia kiwi in the box's colour, then your own files."""
+    out = [("", "Kiwi Custodia, in its colour")]
+    folder = custom_dir()
+    if folder.is_dir():
+        out += [
+            (f"custom:{f.name}", f.stem)
+            for f in sorted(folder.iterdir())
+            if f.is_file() and f.suffix.lower() in (".svg", ".png")
+        ]
+    return out
+
+
+def _custom(box: Box) -> Path | None:
+    """The box's own icon, copied beside the app's data so the entry keeps it when
+    the file in the folder goes."""
+    if not box.icon.startswith("custom:"):
+        return None
+    source = custom_dir() / box.icon.removeprefix("custom:")
+    kept = paths.data_dir() / "icons" / f"{box.id}-own{source.suffix.lower() or '.png'}"
+    try:
+        if source.is_file():
+            kept.parent.mkdir(parents=True, exist_ok=True)
+            if not kept.exists() or kept.read_bytes() != source.read_bytes():
+                shutil.copyfile(source, kept)
+    except OSError:
+        pass
+    return kept if kept.exists() else None
+
+
 def icon_for(box: Box) -> str:
-    """What an entry's Icon= says: the coloured file, or the app's own icon name."""
+    """The one icon a box has everywhere, the list and the app grid alike: your
+    own file, else the Custodia kiwi in its colour, else the app's icon name."""
+    if own := _custom(box):
+        return str(own)
     colored = colored_icon(box)
     return str(colored) if colored else APP_ID

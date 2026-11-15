@@ -308,13 +308,13 @@ class Window(Adw.ApplicationWindow):
     def _update_row(self, row: Adw.ActionRow, box: Box) -> None:
         st = self._state.get(box.id, "stopped")
         row.set_title(box.name)
-        from .. import APP_ID, icons
+        from .. import icons
 
-        colored = icons.colored_icon(box)
-        if colored:
-            row.color_mark.set_from_file(str(colored))  # type: ignore[attr-defined]
+        shown = icons.icon_for(box)  # the same as its app-grid entry
+        if shown.startswith("/"):
+            row.color_mark.set_from_file(shown)  # type: ignore[attr-defined]
         else:
-            row.color_mark.set_from_icon_name(APP_ID)  # type: ignore[attr-defined]
+            row.color_mark.set_from_icon_name(shown)  # type: ignore[attr-defined]
         subtitle = describe(box)
         silent = st == "running" and box.id in self._silent
         if silent:

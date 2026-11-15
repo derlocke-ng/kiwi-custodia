@@ -192,3 +192,11 @@ Kiwi Custodia's own colours until you pick one.
 The **Colour** row in the box dialog changes it. For a new box it starts at
 "A colour of its own", which means the next free colour. There is no
 command-line option for the colour.
+
+## Icons of your own
+
+Instead of the Custodia icon in its colour, a box can have an icon of your
+own. Put PNG or SVG files into `~/.config/kiwi-custodia/icons/`; the folder
+button beside **Icon** in the box's dialog opens it. The files are offered
+for every box the next time you open the dialog. The box keeps a copy, so its
+icon stays when you remove the file.

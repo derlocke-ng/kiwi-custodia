@@ -35,6 +35,9 @@ class Box(Strict):
     # The colour of the box's Custodia icon: a kiwi-icons colourway (ocean, ...),
     # "" for Kiwi Custodia's own. A new box gets one no other box has.
     color: str = ""
+    # Its icon: "" is the Custodia kiwi in its colour; "custom:<file>" one of your
+    # own from the icons folder (kiwi_custodia.icons.custom_dir).
+    icon: str = ""
     exported: list[str] = Field(default_factory=list)  # desktop file ids exported to the host
     # Runs once as root when the box is rebuilt on another device, after its
     # packages and files: for what a package list cannot say.

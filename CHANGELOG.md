@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0
+
+- **Icons of your own**: a box can have an icon from
+  `~/.config/kiwi-custodia/icons/` (PNG or SVG) instead of the Custodia icon in
+  its colour. The box's dialog has an **Icon** row with a button that opens the
+  folder; the icon shows in the list and in the box's app-grid entry.
+
 ## 0.6.1
 
 - **The documentation follows the kiwi-docs guide**, so kiwi-network.eu can show

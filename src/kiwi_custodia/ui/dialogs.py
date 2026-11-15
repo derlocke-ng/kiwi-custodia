@@ -223,6 +223,23 @@ class BoxEditor(Adw.Dialog):
         current = box.color if box else ""
         self.color_row.set_selected(self._colors.index(current) if current in self._colors else 0)
         group.add(self.color_row)
+        self._icons = icons.choices()
+        self.icon_row = Adw.ComboRow(
+            title="Icon", model=Gtk.StringList.new([title for _key, title in self._icons])
+        )
+        keys = [key for key, _title in self._icons]
+        have = box.icon if box else ""
+        self.icon_row.set_selected(keys.index(have) if have in keys else 0)
+        folder = Gtk.Button(
+            icon_name="folder-open-symbolic",
+            valign=Gtk.Align.CENTER,
+            tooltip_text="Your own icons: put PNG or SVG files in this folder, then open "
+            "this dialog again",
+        )
+        folder.add_css_class("flat")
+        folder.connect("clicked", self._open_icons_folder)
+        self.icon_row.add_suffix(folder)
+        group.add(self.icon_row)
         self.packages_row = Adw.EntryRow(
             title="Extra packages, space-separated",
             text=" ".join(box.packages) if box else "",
@@ -272,6 +289,13 @@ class BoxEditor(Adw.Dialog):
         view.set_content(Gtk.ScrolledWindow(child=page, vexpand=True))
         self.set_child(view)
         self._distro_note()
+
+    def _open_icons_folder(self, *_args) -> None:
+        from .. import icons
+
+        folder = icons.custom_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        Gtk.FileLauncher.new(Gio.File.new_for_path(str(folder))).launch(None, None, None)
 
     def _add_travels(self, page: Adw.PreferencesPage, box: Box) -> None:
         """What the box's snapshots carry to another device (mock-up 14)."""
@@ -412,6 +436,7 @@ class BoxEditor(Adw.Dialog):
                 box.shell = shell
             box.desktop_entry = entry
             box.setup_script = script
+            box.icon = self._icons[self.icon_row.get_selected()][0]
             picked = self._colors[self.color_row.get_selected()]
             if picked or self._box is not None:
                 box.color = picked

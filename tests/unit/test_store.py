@@ -75,3 +75,24 @@ def test_each_new_box_gets_a_colour_and_its_entry_shows_it(monkeypatch):
     assert f"Icon={APP_ID}\n" in desktop.render_entry(a, "a box")
     store.save(a)
     assert '"color"' not in (store.paths.box_dir(a.id) / store.RECORD).read_text()
+
+
+def test_a_box_can_have_your_own_icon(monkeypatch):
+    from conftest import make_exit
+    from kiwi_proxy import exits
+
+    from kiwi_custodia import desktop, icons, store
+
+    ex = make_exit("icons")
+    monkeypatch.setattr(exits, "exists", lambda ref: True)
+    folder = icons.custom_dir()
+    folder.mkdir(parents=True)
+    (folder / "lab.svg").write_text("<svg/>")
+    assert icons.choices() == [("", "Kiwi Custodia, in its colour"), ("custom:lab.svg", "lab")]
+    box = store.create("lab", distro="debian", exit_id=ex.id)
+    box.icon = "custom:lab.svg"
+    shown = icons.icon_for(box)
+    assert shown.endswith(f"{box.id}-own.svg") and open(shown).read() == "<svg/>"  # noqa: SIM115
+    assert f"Icon={shown}\n" in desktop.render_entry(box, "a box")
+    (folder / "lab.svg").unlink()
+    assert icons.icon_for(box) == shown  # the copy stays

@@ -87,8 +87,9 @@ def save(box: Box) -> None:
     d = paths.box_dir(box.id)
     d.mkdir(parents=True, exist_ok=True)
     data = box.model_dump(mode="json")
-    if not data.get("color"):
-        data.pop("color", None)  # so an older Kiwi Custodia still reads the box
+    for optional in ("color", "icon"):
+        if not data.get(optional):
+            data.pop(optional, None)  # so an older Kiwi Custodia still reads the box
     _write_json(d / RECORD, json.dumps(data, indent=2))
 
 
