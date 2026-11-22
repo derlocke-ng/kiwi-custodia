@@ -94,6 +94,11 @@ home is copied as it is.
   start, start as it is, or cancel. When the box changed both here and on the
   other device, you choose which copy wins. This needs **Ask before using an
   older copy**, which is on unless you turn it off.
+- **The notice.** The window says when the folder holds newer copies, in a
+  line under its header with **Import**, which restores them. A running box
+  is left alone until it stops, and one that changed both here and elsewhere
+  waits for the question above. ✕ hides the notice until another newer
+  snapshot comes.
 - **In use elsewhere.** A box that is running on another device says so in
   its row, and kiwi-custodia asks before it starts here. The folder can tell
   only as fast as your sync client carries it.

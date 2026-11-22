@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0
+
+- **A notice under the header when the snapshot folder holds newer copies**
+  of boxes here, with **Import** and ✕. Import restores them; a running box is
+  left alone until it stops. ✕ hides the notice until another newer snapshot
+  comes. The bar is kiwi-template's kit notice (kit 0.1.4).
+
 ## 0.7.0
 
 - **Icons of your own**: a box can have an icon from
